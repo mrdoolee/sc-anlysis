@@ -341,7 +341,7 @@ function openPromptModal(): void {
     isStudent ? 'AI 분석 프롬프트 (학생, 익명)' : 'AI 분석 프롬프트 (학급, 익명)',
     `<div class="prompt-note">
       <p><strong>이름·학번·번호·반·학교·선생님 의견은 넣지 않았습니다.</strong> ${isStudent ? "학생은 '대상 학생'으로" : '학생은 무작위 순서의 익명 코드(S01…)로'} 표시하고, 석차·백분위도 뺐습니다.</p>
-      <p>이 앱은 프롬프트를 어디에도 보내지 않습니다. 내용을 확인한 뒤 복사해, 학교에서 허용한 AI 도구에 직접 붙여 넣으세요.</p>
+      <p>이 앱은 프롬프트를 어디에도 보내지 않습니다. 내용을 확인한 뒤 복사해, 학교에서 허용한 AI 도구에 직접 붙여 넣으세요.</p>${isStudent ? "<p>요청 6번의 답(학부모 전달용 의견, 250자 이내)은 '내보내기'의 <strong>선생님 의견</strong> 칸에 붙여 넣어 쓸 수 있습니다.</p>" : ''}
     </div>
     <label class="group-label" for="prompt-text">프롬프트 (분석 조건: 시점 ${m.tpIds.length}개, ${state.unit === 'group' ? '교과군' : '과목'} 단위)</label>
     <textarea id="prompt-text" class="prompt-text" rows="18" readonly>${esc(text)}</textarea>`,
@@ -524,7 +524,7 @@ function exportHtml(): void {
   const body = buildReport();
   const d = new Date();
   const stamp = `${d.getFullYear()}${String(d.getMonth() + 1).padStart(2, '0')}${String(d.getDate()).padStart(2, '0')}`;
-  const title = `몇점 — 성적 리포트 ${state.ds?.classLabel ?? ''} ${stamp}`.trim();
+  const title = `몇점 분석기 — 성적 리포트 ${state.ds?.classLabel ?? ''} ${stamp}`.trim();
   const blob = new Blob([exportHtmlDocument(title, body)], { type: 'text/html;charset=utf-8' });
   const url = URL.createObjectURL(blob);
   const a = document.createElement('a');

@@ -39,7 +39,7 @@ page.on('pageerror', (e) => consoleErrors.push(String(e)));
 
 const url = pathToFileURL(distHtml).href;
 await page.goto(url);
-check('file://로 앱 로드', (await page.locator('h1').textContent()) === '몇점' && (await page.title()) === '몇점: 성적 분석 도우미(중학교 학급 담임용)');
+check('file://로 앱 로드', (await page.locator('h1').textContent()) === '몇점 분석기' && (await page.title()) === '몇점 분석기: 성적 분석 도우미(중학교 학급 담임용)');
 check('불러오기: 나이스 다운로드 경로 안내', (await page.locator('.path').count()) === 2 && (await page.locator('.steps-help').textContent()).includes('학급별일람표조회-전체교과목'));
 check('지원 형식: 괄호 설명 없음', !/(가로형)|(세로형)/.test(await page.locator('.steps-help').textContent()));
 
@@ -115,6 +115,12 @@ const stepOrder = await page.evaluate(() => {
   return after(els[0], els[1]) && after(els[1], els[2]) && els[0].contains(document.querySelector('[data-change="tp-toggle"]')) && els[1].contains(document.getElementById('c-metric')) && els[1].contains(document.getElementById('subj-chips')) && els[2].contains(document.getElementById('tab-student')) && els[2].contains(document.getElementById('c-student'));
 });
 check('분석 조건 3단계 순서(시점→과목→대상)', stepOrder);
+const align = await page.evaluate(() => {
+  const a = document.querySelector('#step-3 .segmented').getBoundingClientRect();
+  const b = document.getElementById('c-student').getBoundingClientRect();
+  return Math.abs((a.top + a.bottom) / 2 - (b.top + b.bottom) / 2);
+});
+check('분석 대상: 탭과 학생 선택 높이 정렬', align <= 2, `중심 차이 ${align.toFixed(1)}px`);
 // 그래프 표시 과목: 늘 보이는 버튼
 await page.click('label:has(#hid-0)');
 check('표시 과목 버튼 토글(늘 보임)', (await page.locator('#subj-chips').isVisible()) && !(await page.isChecked('#hid-0')));
@@ -161,8 +167,10 @@ await page.selectOption('#c-student', { index: 0 });
 
 // AI 분석 프롬프트(익명): 학생
 const realNames = Array.from({ length: 28 }, (_, i) => `학생${String(i + 1).padStart(2, '0')}`);
+check('학생 분석: 학번 표시 없음', !((await page.locator('#result-body .student-head').textContent()) ?? '').includes('학번'));
 await page.click('#btn-prompt');
 let ptext = await page.inputValue('#prompt-text');
+check('학생 프롬프트: 학부모 의견 250자 요청', ptext.includes('250자 이내') && ptext.includes("'선생님 의견'"));
 check('학생 AI 프롬프트: 이름·번호·반 없음', ptext.includes('대상 학생') && ptext.includes('# 요청') && !realNames.some((n) => ptext.includes(n)) && !/\d+\s*반|\d+\s*번|석차|백분위/.test(ptext));
 await page.click('#btn-copy-prompt');
 check('프롬프트 복사 버튼', ((await page.locator('#copy-status').textContent()) ?? '').includes('복사했습니다'));

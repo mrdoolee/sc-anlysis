@@ -117,7 +117,7 @@ export function studentSections(ctx: ViewCtx, stu: string): string {
   const lastTp = lastIdx === undefined ? null : m.tpIds[lastIdx];
   const lastCell = lastTp ? m.cell(AVG, lastTp, stu) : undefined;
   const al = alerts(m, settings, lab).find((a) => a.student === stu);
-  let html = `<header class="student-head"><h2>${esc(ctx.nameOf(stu))}</h2><p class="meta">${esc(ds.classLabel ?? '')}${st?.nos.length ? ` · ${st.nos.join('/')}번` : ''}${!ctx.anonymize && st?.sid ? ` · 학번 ${esc(st.sid)}` : ''}${st?.note ? ` · ${esc(st.note)}` : ''}</p>${selectionSummary(ctx)}</header>`;
+  let html = `<header class="student-head"><h2>${esc(ctx.nameOf(stu))}</h2><p class="meta">${esc(ds.classLabel ?? '')}${st?.nos.length ? ` · ${st.nos.join('/')}번` : ''}${st?.note ? ` · ${esc(st.note)}` : ''}</p>${selectionSummary(ctx)}</header>`;
 
   const v = avgTrend.values.filter((x): x is number => x !== null);
   const rankVisible = !ctx.interactive || ctx.showRank === true;

@@ -346,9 +346,11 @@ table.sortable thead th { padding: 0; }
 .fstep-body { min-width: 0; display: flex; flex-direction: column; gap: 10px; }
 .fstep-body .filter-row { grid-template-columns: repeat(auto-fill, minmax(190px, 1fr)); }
 .count { display: inline-block; margin-left: 4px; font-size: 12px; font-weight: 600; color: var(--color-primary); background: var(--color-bg); border-radius: 999px; padding: 1px 8px; }
-.target-row { display: flex; flex-wrap: wrap; align-items: flex-end; gap: 12px 16px; }
+.target-row { display: flex; flex-wrap: wrap; align-items: center; gap: 12px 16px; }
 .target-row .segmented { background: var(--color-bg); }
-.target-row .field { min-width: 220px; }
+.target-row .field { flex-direction: row; align-items: center; gap: 8px; }
+.target-row .field > label { white-space: nowrap; font-size: 13px; }
+.target-row .field select { min-width: 200px; height: 44px; }
 .result-title { margin: 0; font-size: 18px; }
 @media (max-width: 900px) { .fstep { grid-template-columns: 1fr; } }
 

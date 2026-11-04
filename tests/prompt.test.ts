@@ -42,6 +42,11 @@ describe('LLM 프롬프트(학생)', () => {
     expect(text).toMatch(/z/);
   });
 
+  it('학부모 전달용 선생님 의견(250자 이내) 제안을 요청한다', () => {
+    expect(text).toContain('250자 이내');
+    expect(text).toContain('선생님 의견');
+  });
+
   it('석차·백분위는 넣지 않는다', () => {
     expect(text).not.toMatch(/석차|백분위|등수/);
   });
