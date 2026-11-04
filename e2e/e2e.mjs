@@ -39,7 +39,14 @@ page.on('pageerror', (e) => consoleErrors.push(String(e)));
 
 const url = pathToFileURL(distHtml).href;
 await page.goto(url);
-check('file://로 앱 로드', (await page.locator('h1').textContent())?.includes('성적 추세') ?? false);
+check('file://로 앱 로드', (await page.locator('h1').textContent()) === '너의 점수는' && (await page.title()) === '너의 점수는: 중학교 성적 분석 도구(학급 담임용)');
+check('불러오기: 나이스 다운로드 경로 안내', (await page.locator('.path').count()) === 2 && (await page.locator('.steps-help').textContent()).includes('학급별일람표조회-전체교과목'));
+
+// 0. 사용 설명서·제작자 모달(표시 전용, 상태 불변)
+await page.click('#manual-btn');
+check('사용 설명서 모달', (await page.locator('#manual-modal[role="dialog"][aria-modal="true"]').count()) === 1 && (await page.locator('#manual-modal .card').count()) >= 5);
+await page.keyboard.press('Escape');
+check('ESC로 모달 닫기', (await page.locator('#modal-root .modal').count()) === 0);
 
 // 1. 불러오기
 const files = writeFakeSet(join(out, 'fake'));
@@ -77,29 +84,77 @@ check('사회→역사 별칭 제안', (await sugg.count()) > 0);
 await sugg.first().click();
 await page.screenshot({ path: join(out, '02-check.png'), fullPage: true });
 
-// 3. 분석: S1, S2, S3
+// 3. 대시보드
 await page.click('#nav-analyze');
-for (const p of ['S1', 'S2', 'S3']) {
-  await page.selectOption('#c-preset', p);
-  const n = await page.locator('#result-body svg').count();
-  const sel = await page.locator('.filters input[data-change="tp-toggle"]:checked').count();
-  check(`${p} 학생 화면 차트 표시`, n >= 6, `차트 ${n}개, 시점 ${sel}개`);
-  await page.screenshot({ path: join(out, `03-${p}-student.png`), fullPage: true });
-}
-// 차트 박스: 한 줄 머리글 + 접기/펼치기, 학생을 바꿔도 접힘 유지
+check('시나리오 드롭다운 없음', (await page.locator('#c-preset').count()) === 0);
+const selTp = () => page.locator('.filters input[data-change="tp-toggle"]:checked').count();
+check('처음엔 모든 시점 선택', (await selTp()) === 5);
+await page.click('label:has(#tp-0)');
+check('시점 버튼으로 선택 해제', (await selTp()) === 4);
+await page.click('#tp-all');
+check('모두 선택', (await selTp()) === 5);
+
+// 추이 과목 레이어: 버튼을 눌러도 열린 채 유지
+await page.click('#subj-more summary');
+await page.click('label:has(#hid-0)');
+check('표시 과목 레이어 유지', (await page.locator('#subj-more[open]').count()) === 1 && !(await page.isChecked('#hid-0')));
+await page.click('label:has(#hid-0)');
+
+// 늘 보이는 차트 2개 + 나머지는 기본 접힘
 const svgCount = () => page.locator('#result-body .chart-svg').count();
-const before = await svgCount();
-await page.click('#cb-stu-lines');
-const afterOne = await svgCount();
+check('고정 차트 2개(과목별 추이·표준화 추이)', (await page.locator('#result-body .pin-card').count()) === 2 && (await page.locator('#zoom-stu-lines .pin-title').textContent()) === '과목별 추이 (원점수)' && (await page.locator('#zoom-stu-z .pin-title').textContent()).startsWith('표준화 추이'));
+check('나머지 차트 기본 접힘', (await page.locator('#result-body .chart-body').count()) === 0 && (await page.locator('#result-body .chart-box').count()) >= 4);
+const pinnedOrder = await page.evaluate(() => {
+  const pin = document.querySelector('#result-body .pinned');
+  const interp = document.querySelector('#result-body .interpret');
+  return !!pin && !!interp && !!(pin.compareDocumentPosition(interp) & Node.DOCUMENT_POSITION_FOLLOWING);
+});
+check('고정 차트가 해석 위에 있음', pinnedOrder);
+await page.screenshot({ path: join(out, '03-student.png'), fullPage: true });
+
+// 크게 보기 모달
+await page.click('#zoom-stu-lines');
+check('차트 크게 보기 모달', (await page.locator('#zoom-modal .chart-svg').count()) === 1 && (await page.evaluate(() => document.body.classList.contains('modal-open'))));
+await page.click('#zoom-modal [data-modal-close]');
+check('✕로 닫기 + 스크롤 복구', (await page.locator('#modal-root .modal').count()) === 0 && !(await page.evaluate(() => document.body.classList.contains('modal-open'))));
+
+// 접기/펼치기
+const pinnedSvgs = 2;
+await page.click('#cb-stu-focus');
 await page.selectOption('#c-student', { index: 1 });
-check('차트 하나 접기(학생 바꿔도 유지)', afterOne === before - 1 && (await svgCount()) === before - 1 && (await page.getAttribute('#cb-stu-lines', 'aria-expanded')) === 'false', `${before} → ${afterOne}`);
-await page.click('#charts-collapse');
-check('차트 모두 접기', (await svgCount()) === 0 && (await page.locator('#result-body .chart-box').count()) >= 7);
+check('차트 하나 펼치기(학생 바꿔도 유지)', (await svgCount()) === pinnedSvgs + 1 && (await page.getAttribute('#cb-stu-focus', 'aria-expanded')) === 'true');
 await page.click('#charts-expand');
-check('차트 모두 펼치기', (await svgCount()) === before);
+const expanded = await svgCount();
+check('차트 모두 펼치기', expanded >= pinnedSvgs + 4, `${expanded}개`);
+await page.click('#charts-collapse');
+check('차트 모두 접기', (await svgCount()) === pinnedSvgs);
 await page.selectOption('#c-student', { index: 0 });
+
+// 석차는 눌러야 보이고, 학생을 바꾸면 다시 가려짐
+const bodyText = () => page.locator('#result-body').textContent();
+check('석차 기본 숨김', (await page.locator('#rank-toggle').textContent()) === '석차 보기' && !/\d+\/\d+위|백분위 \d/.test(await bodyText()));
+await page.click('#rank-toggle');
+check('석차 보기 → 표시', /\d+\/28위/.test(await bodyText()));
+await page.selectOption('#c-student', { index: 2 });
+check('학생 바꾸면 석차 다시 숨김', !/\d+\/\d+위/.test(await bodyText()));
+await page.selectOption('#c-student', { index: 0 });
+
+// 제작자 모달: 배경 클릭·ESC·✕로 닫힘, 상태 불변
+const before = { view: await page.getAttribute('#nav-analyze', 'aria-current'), stu: await page.inputValue('#c-student'), tps: await selTp() };
+await page.click('#credit-link');
+const links = await page.locator('#credit-modal a').evaluateAll((as) => as.map((a) => [a.getAttribute('href'), a.getAttribute('target'), a.getAttribute('rel')]));
+check('제작자 모달: 카드 2개·링크 새 탭', (await page.locator('#credit-modal .card').count()) === 2 && links.length === 2 && links.every(([, t, r]) => t === '_blank' && r.includes('noopener') && r.includes('noreferrer')) && (await page.getAttribute('#credit-modal [data-modal-close]', 'aria-label')) === '닫기');
+await page.mouse.click(5, 5);
+check('배경 클릭으로 닫기', (await page.locator('#modal-root .modal').count()) === 0);
+await page.click('#credit-link');
+await page.keyboard.press('Escape');
+const after = { view: await page.getAttribute('#nav-analyze', 'aria-current'), stu: await page.inputValue('#c-student'), tps: await selTp() };
+check('모달은 앱 상태에 영향 없음', JSON.stringify(before) === JSON.stringify(after) && (await page.locator('#modal-root .modal').count()) === 0);
+
 await page.click('#tab-class');
-check('학급 개관 차트', (await page.locator('#result-body svg').count()) >= 6);
+check('학급 개관: 차트 기본 접힘', (await page.locator('#result-body .chart-box').count()) >= 6 && (await svgCount()) === 0);
+await page.click('#charts-expand');
+check('학급 개관 차트 펼침', (await svgCount()) >= 6);
 await page.screenshot({ path: join(out, '04-class.png'), fullPage: true });
 await page.locator('#result-body circle.pt, #result-body path.pt').first().click();
 check('산점도 점 클릭 → 학생 상세', await page.locator('#tab-student.active').count() === 1);
@@ -129,14 +184,22 @@ check('내보낸 HTML: CSP meta', exported.includes("default-src 'none'"));
 check('익명화: 실제 이름(학생NN) 없음', !/학생\d{2}/.test(exported) && exported.includes('학생A'));
 check('내보낸 HTML: 학급 1쪽 + 학생 28장', (exported.match(/class="page"/g) ?? []).length === 1 && (exported.match(/class="page parent-page"/g) ?? []).length === 28);
 const parentText = exported.slice(exported.indexOf('class="page parent-page"'));
-check('학생 리포트에 교사용 지표(z·석차·백분위) 없음', !/z점수|석차|백분위|Δz/.test(parentText));
+check('학생 리포트: 석차·백분위·성취도 없음, 표준화 추이 있음', !/석차|백분위|Δz|성취도/.test(parentText) && (parentText.match(/aria-label="표준화 추이/g) ?? []).length === 28);
 
-// 실명 HTML도 저장 가능
+// 선생님 의견: 입력하면 미리보기·내보내기에 반영, 끄면 칸 없음
 await page.uncheck('#anon');
 await page.click('#scope-student');
+const longComment = '수학 기초가 탄탄해지고 있습니다. '.repeat(20).slice(0, 250);
+await page.fill('#comment-text', longComment);
+check('선생님 의견 입력 → 미리보기 반영', (await page.locator('#a4-preview .pr-comment-text').textContent()) === longComment.trim() && (await page.inputValue('#comment-text')).length === 250);
+await page.uncheck('#inc-comment');
+check('선생님 의견 빼기', (await page.locator('#a4-preview .pr-comment').count()) === 0);
+await page.check('#inc-comment');
+check('다시 넣으면 입력 내용 유지', (await page.inputValue('#comment-text')) === longComment);
 const [dl2] = await Promise.all([page.waitForEvent('download'), page.click('#btn-export-html')]);
 await dl2.saveAs(join(out, 'report-student.html'));
-check('학생 1명 HTML 저장', readFileSync(join(out, 'report-student.html'), 'utf8').includes('학생01'));
+const one = readFileSync(join(out, 'report-student.html'), 'utf8');
+check('학생 1명 HTML 저장(의견 포함)', one.includes('학생01') && one.includes('수학 기초가 탄탄해지고'));
 
 // 4-1. 학생 리포트 A4 1장: 선택 학생 3명 → PDF 정확히 3쪽, 각 쪽 내용이 잘리지 않음
 async function onePageCheck(label, keys) {

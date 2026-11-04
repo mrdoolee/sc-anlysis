@@ -1,5 +1,5 @@
 // 앱 상태와 화면. 상태가 바뀌면 현재 화면을 다시 그린다(이벤트는 위임 방식, 인라인 핸들러 없음).
-import { AVG, METRIC_LABEL, PRESET_LABEL, buildMatrix, defaultGrade, gradesOf, presetTimepoints, type Matrix, type Metric, type Preset, type Unit } from '../core/analysis.ts';
+import { AVG, METRIC_LABEL, buildMatrix, defaultGrade, gradesOf, presetTimepoints, type Matrix, type Metric, type Preset, type Unit } from '../core/analysis.ts';
 import { buildDataset, suggestAliases, KIND_LABEL, type Dataset, type TpOverride } from '../core/dataset.ts';
 import { parseGrid } from '../core/parse.ts';
 import { DEFAULT_SETTINGS, loadSettings, saveSettings, type Settings } from '../core/settings.ts';
@@ -7,6 +7,7 @@ import type { ParsedFile, TpKind } from '../core/types.ts';
 import { readXlsx } from '../core/xlsx.ts';
 import { esc } from '../charts/svg.ts';
 import { buildReportBody, exportHtmlDocument, type ExportScope } from '../report/report.ts';
+import { openCredit, openManual, openModal, installModalHandlers } from './modal.ts';
 import { PRIVACY_NOTE, alertsSection, anonymizer, classSections, footnotes, gapSection, parentReport, studentSections, type ViewCtx } from '../views/sections.ts';
 
 type View = 'load' | 'check' | 'analyze' | 'export' | 'settings';
@@ -23,8 +24,16 @@ interface State {
   excludedTps: string[];
   /** 데이터 확인 화면에서 펼친 시점 */
   openTps: string[];
-  /** 대시보드에서 접어 둔 차트 */
-  collapsedCharts: string[];
+  /** 대시보드에서 펼친 차트(기본은 모두 접힘) */
+  expandedCharts: string[];
+  /** 석차·백분위 표시(기본 숨김, 학생을 바꾸면 다시 숨김) */
+  showRank: boolean;
+  /** '추이 그래프에 표시할 과목' 레이어 열림 */
+  subjectsOpen: boolean;
+  /** 학생 리포트에 선생님 의견 칸 넣기 */
+  includeComment: boolean;
+  /** 학생별 선생님 의견(메모리에만 보관) */
+  comments: Record<string, string>;
   gradeSigma: Record<string, number>;
   ds: Dataset | null;
   view: View;
@@ -46,7 +55,7 @@ interface State {
 }
 
 const initial = (): State => ({
-  files: [], loadErrors: [], settings: loadSettings(), merges: {}, tpOrder: [], tpOverrides: {}, excludedTps: [], openTps: [], collapsedCharts: [], gradeSigma: {}, ds: null,
+  files: [], loadErrors: [], settings: loadSettings(), merges: {}, tpOrder: [], tpOverrides: {}, excludedTps: [], openTps: [], expandedCharts: [], showRank: false, subjectsOpen: false, includeComment: true, comments: {}, gradeSigma: {}, ds: null,
   view: 'load', tab: 'student', preset: 'S3', grade: null, a: null, b: null, tpIds: [], unit: 'subject', metric: 'raw', focus: AVG,
   student: null, hidden: [], exportScope: 'student', exportSelected: [], anonymize: false, message: '',
 });
@@ -89,7 +98,7 @@ function ctx(interactive: boolean, anonymize = false): ViewCtx | null {
   const m = matrix();
   if (!m || !state.ds) return null;
   const focus = m.items.some((i) => i.id === state.focus) ? state.focus : AVG;
-  return { ds: state.ds, m, settings: state.settings, metric: state.metric, focus, hidden: new Set(state.hidden), interactive, anonymize, nameOf: anonymizer(state.ds, anonymize), collapsed: new Set(state.collapsedCharts) };
+  return { ds: state.ds, m, settings: state.settings, metric: state.metric, focus, hidden: new Set(state.hidden), interactive, anonymize, nameOf: anonymizer(state.ds, anonymize), expanded: new Set(state.expandedCharts), showRank: state.showRank };
 }
 
 // ---------- 화면 ----------
@@ -105,7 +114,7 @@ const NAV: [View, string, string][] = [
 const TITLES: Record<View, [string, string]> = {
   load: ['성적 파일 불러오기', '고사 일람표·교과학습발달상황 xlsx'],
   check: ['데이터 확인', '시점 · 과목 매핑 · 학생 매칭 · 무결성'],
-  analyze: ['성적 추세 대시보드', '시나리오와 학생을 골라 추세를 봅니다'],
+  analyze: ['성적 추세 대시보드', '비교할 시점과 학생을 골라 추세를 봅니다'],
   export: ['리포트 내보내기', '학생·학부모용 A4 1장 / 학급 요약'],
   settings: ['설정', '기준값 · 성취도 · 교과군'],
 };
@@ -140,8 +149,7 @@ function viewLoad(): string {
   const files = state.files
     .map((f) => `<li class="file-card"><div class="card-head"><strong>${esc(f.fileName)}</strong><span class="kind">${f.kind === 'exam' ? '고사' : '학기 성적'}</span></div><p class="meta">시점 ${f.timepoints.length}개 · ${esc(f.timepoints.map((t) => t.subjects.length).join('/'))}과목</p>${f.notices.length ? `<ul class="notes">${f.notices.map((n) => `<li>${esc(n)}</li>`).join('')}</ul>` : ''}<button type="button" class="small" data-action="remove-file" data-file="${esc(f.fileName)}">빼기</button></li>`)
     .join('');
-  return `<div class="hero">
-  <section class="card">
+  return `<section class="card">
     <h2>파일을 끌어다 놓으세요</h2>
     <div id="drop" class="drop" tabindex="0" role="button" aria-label="파일을 끌어다 놓거나 눌러서 선택">
       <p><strong>xlsx 파일을 여기에 놓기</strong></p>
@@ -154,12 +162,13 @@ function viewLoad(): string {
   <section class="card steps-help">
     <h2>지원 형식</h2>
     <ol>
-      <li><strong>고사 일람표</strong>(가로형): 학급별 회차 시험 점수. 제목의 학년·학기·회차를 자동으로 읽습니다.</li>
-      <li><strong>교과학습발달상황</strong>(세로형): 학기 성적. 학년·학기별로 나눠 읽습니다.</li>
-      <li>학년은 정해져 있지 않습니다. 1~3학년 어떤 조합이든 됩니다.</li>
+      <li><strong>고사 일람표</strong>(가로형): 학급별 회차 시험 점수. 제목의 학년·학기·회차를 자동으로 읽습니다.
+        <p class="path"><span class="path-label">다운로드</span><span>[나이스]</span>›<span>[학급담임]</span>›<span>[정기시험조회/통계]</span>›<span>[정기시험조회]</span>›<span>[학급별일람표조회-전체교과목]</span>›<span>[저장] 버튼, XLS data</span></p></li>
+      <li><strong>교과학습발달상황</strong>(세로형): 학기 성적. 학년·학기별로 나눠 읽습니다.
+        <p class="path"><span class="path-label">다운로드</span><span>[나이스]</span>›<span>[학급담임]</span>›<span>[학교생활기록부]</span>›<span>[학생부 항목별 조회]</span>›<span>[교과학습발달상황-교과학습발달상황]</span>›<span>[저장] 버튼, XLS data</span></p></li>
+      <li>학년은 정해져 있지 않습니다. 1~3학년 어떤 조합이든 됩니다. 필요 없는 학년·학기는 '데이터 확인'에서 제외할 수 있습니다.</li>
     </ol>
   </section>
-</div>
 ${state.loadErrors.length ? `<div class="alert" role="alert"><ul>${state.loadErrors.map((e) => `<li>${esc(e)}</li>`).join('')}</ul></div>` : ''}
 ${files ? `<section class="card"><div class="card-head"><h2>불러온 파일 (${state.files.length})</h2><button type="button" class="button-primary" data-action="nav" data-view="check">다음: 데이터 확인 →</button></div><ul class="file-cards">${files}</ul></section>` : ''}`;
 }
@@ -238,7 +247,7 @@ function viewCheck(): string {
   <ol class="tp-list" id="tp-list">${tpItems}</ol>
   ${ds.excluded.length ? `<div class="excluded"><span class="group-label">제외한 시점 (${ds.excluded.length})</span><ul>${ds.excluded.map((x, i) => `<li><span>${esc(x.label)} <span class="muted">· ${esc(x.fileName)}</span></span> <button type="button" class="small" id="tpin-${i}" data-action="tp-include" data-id="${esc(x.id)}">다시 포함</button></li>`).join('')}</ul></div>` : ''}
 </section>
-<div class="grid-2">
+<div class="stack">
   <section class="card">
     <h2>과목 매핑</h2>
     <p class="meta">학년마다 이름이 다른 같은 과목(예: 사회 ↔ 역사)을 하나로 묶으려면 비교용 과목명을 입력하세요. 비우면 원래 이름을 씁니다.</p>
@@ -269,16 +278,13 @@ function filters(m: Matrix): string {
   const field = (id: string, label: string, control: string) => `<div class="field"><label for="${id}">${label}</label>${control}</div>`;
   return `<section class="card filters" aria-label="분석 조건">
   <div class="filter-row">
-    ${field('c-preset', '시나리오', `<select id="c-preset" data-change="preset">${(Object.keys(PRESET_LABEL) as Preset[]).map((p) => opt(p, PRESET_LABEL[p], state.preset === p)).join('')}</select>`)}
-    ${state.preset === 'S1' || state.preset === 'S2' ? field('c-grade', '대상 학년', `<select id="c-grade" data-change="grade">${grades.map((g) => opt(String(g), `${g}학년`, state.grade === g)).join('')}</select>`) : ''}
-    ${state.preset === 'S4' ? field('c-a', '시점 A', `<select id="c-a" data-change="pick-a">${tps.map((t) => opt(t.id, t.label, state.a === t.id)).join('')}</select>`) + field('c-b', '시점 B', `<select id="c-b" data-change="pick-b">${tps.map((t) => opt(t.id, t.label, state.b === t.id)).join('')}</select>`) : ''}
     ${field('c-student', '학생', `<select id="c-student" data-change="student">${ds.students.map((s) => opt(s.key, `${s.nos[0] ?? ''} ${s.name}`, state.student === s.key)).join('')}</select>`)}
     ${field('c-metric', '점수 기준', `<select id="c-metric" data-change="metric">${(Object.keys(METRIC_LABEL) as Metric[]).filter((k) => k !== 'zg' || hasSigma).map((k) => opt(k, METRIC_LABEL[k], state.metric === k)).join('')}</select>`)}
     ${field('c-focus', '중심 항목', `<select id="c-focus" data-change="focus">${m.items.map((i) => opt(i.id, i.label, state.focus === i.id)).join('')}</select>`)}
     <div class="field"><span class="group-label">단위</span><div class="chips">${chip('u-subject', 'value="subject" data-change="unit"', state.unit === 'subject', '과목', 'radio', 'unit')}${chip('u-group', 'value="group" data-change="unit"', state.unit === 'group', '교과군', 'radio', 'unit')}</div></div>
   </div>
-  <div class="field"><span class="group-label">시점 (${state.tpIds.length}개 선택)</span><div class="chips">${tps.map((t, i) => chip(`tp-${i}`, `data-change="tp-toggle" data-id="${esc(t.id)}"`, state.tpIds.includes(t.id), `${esc(t.label)}${t.kind === 'semester' ? ' <span class="tag">학기</span>' : ''}`)).join('')}</div></div>
-  <details class="more"><summary>추이 그래프에 표시할 과목</summary><div class="chips">${m.items.filter((i) => i.id !== AVG).map((i, k) => chip(`hid-${k}`, `data-change="hide-item" data-item="${esc(i.id)}"`, !state.hidden.includes(i.id), esc(i.label))).join('')}</div></details>
+  <div class="field"><span class="group-label">비교할 시점 (${state.tpIds.length}/${tps.length}개 선택) <button type="button" class="small" id="tp-all" data-action="tp-select-all">${state.tpIds.length === tps.length ? '모두 해제' : '모두 선택'}</button></span><div class="chips">${tps.map((t, i) => chip(`tp-${i}`, `data-change="tp-toggle" data-id="${esc(t.id)}"`, state.tpIds.includes(t.id), `${esc(t.label)}${t.kind === 'semester' ? ' <span class="tag">학기</span>' : ''}`)).join('')}</div></div>
+  <details class="more" id="subj-more"${state.subjectsOpen ? ' open' : ''}><summary>추이 그래프에 표시할 과목</summary><div class="chips">${m.items.filter((i) => i.id !== AVG).map((i, k) => chip(`hid-${k}`, `data-change="hide-item" data-item="${esc(i.id)}"`, !state.hidden.includes(i.id), esc(i.label))).join('')}</div></details>
 </section>`;
 }
 
@@ -305,27 +311,32 @@ function viewAnalyze(): string {
 function viewExport(): string {
   const ds = state.ds!;
   const scopes: [ExportScope, string][] = [
-    ['student', `현재 학생 1명 (${state.student ? ds.students.find((s) => s.key === state.student)?.name ?? '' : '없음'})`],
+    ['student', '현재 학생 1명'],
     ['selected', '선택 학생'],
     ['all', '학급 전체 (학급 요약 + 학생마다 1장)'],
     ['class', '학급 요약만 (교사용)'],
   ];
-  const c = ctx(false, state.anonymize);
-  const previewKey = state.exportScope === 'selected' ? state.exportSelected[0] : state.student;
-  const preview =
-    c && previewKey && state.exportScope !== 'class'
-      ? `<div class="report"><div class="parent-page">${parentReport(c, previewKey, new Date())}</div></div>`
-      : state.exportScope === 'class'
-        ? '<p class="meta">학급 요약은 교사용 여러 쪽 리포트입니다. 미리보기는 학생 리포트만 제공합니다.</p>'
-        : '<p class="meta">미리볼 학생을 선택하세요.</p>';
-  return `<div class="grid-export">
-  <section class="card">
+  const cur = state.student;
+  const curName = cur ? (ds.students.find((s) => s.key === cur)?.name ?? '') : '';
+  const comment = state.includeComment && cur ? `<div class="field comment-field">
+      <label for="comment-text">선생님 의견 — ${esc(curName)} <span class="muted">(비워 두면 손글씨용 빈 칸, 최대 250자, 저장되지 않음)</span></label>
+      <textarea id="comment-text" rows="4" maxlength="250" data-input="comment" placeholder="예: 수학 기초가 탄탄해지고 있습니다. 영어 단어 복습을 꾸준히 하면 좋겠습니다.">${esc(state.comments[cur] ?? '')}</textarea>
+      <span class="meta" id="comment-count">${(state.comments[cur] ?? '').length}/250</span>
+    </div>` : '';
+  return `<section class="card">
     <h2>내보내기 설정</h2>
     <div class="alert" role="note"><strong>개인정보 주의</strong> — ${esc(PRIVACY_NOTE)} 내보낸 파일은 이 컴퓨터에만 저장됩니다.</div>
-    <p class="meta">학생 리포트는 학생·학부모 전달용 <strong>A4 1장</strong>입니다(점수 변화, 학년 평균 비교, 쉬운 설명, 선생님 의견 칸). 현재 분석 조건(시점 ${state.tpIds.length}개, ${state.unit === 'group' ? '교과군' : '과목'} 단위)으로 만듭니다.</p>
-    <fieldset><legend>범위</legend>${scopes.map(([v, l]) => `<label class="check"><input id="scope-${v}" type="radio" name="scope" value="${v}" data-change="scope"${state.exportScope === v ? ' checked' : ''}> ${esc(l)}</label>`).join('')}</fieldset>
+    <p class="meta">학생 리포트는 학생·학부모 전달용 <strong>A4 1장</strong>입니다(점수 변화, 표준화 추이, 학년 평균 비교, 쉬운 설명, 선생님 의견). 현재 분석 조건(시점 ${state.tpIds.length}개, ${state.unit === 'group' ? '교과군' : '과목'} 단위)으로 만듭니다.</p>
+    <div class="export-grid">
+      <fieldset><legend>범위</legend>${scopes.map(([v, l]) => `<label class="check"><input id="scope-${v}" type="radio" name="scope" value="${v}" data-change="scope"${state.exportScope === v ? ' checked' : ''}> ${esc(l)}</label>`).join('')}</fieldset>
+      <fieldset><legend>옵션</legend>
+        <div class="field"><label for="exp-student">미리보기·의견 작성 학생</label><select id="exp-student" data-change="student">${ds.students.map((s) => opt(s.key, `${s.nos[0] ?? ''} ${s.name}${state.comments[s.key]?.trim() ? ' ✎' : ''}`, cur === s.key)).join('')}</select></div>
+        <label class="check"><input id="inc-comment" type="checkbox" data-change="include-comment"${state.includeComment ? ' checked' : ''}> 선생님 의견 칸 넣기</label>
+        <label class="check"><input id="anon" type="checkbox" data-change="anonymize"${state.anonymize ? ' checked' : ''}> 익명화 (이름 → 학생A, 학생B…, 학번 숨김)</label>
+      </fieldset>
+    </div>
     ${state.exportScope === 'selected' ? `<fieldset class="cols"><legend>학생 선택 (${state.exportSelected.length}명)</legend>${ds.students.map((s, i) => `<label class="check"><input id="sel-${i}" type="checkbox" data-change="export-pick" data-key="${esc(s.key)}"${state.exportSelected.includes(s.key) ? ' checked' : ''}> ${esc(s.name)}</label>`).join('')}</fieldset>` : ''}
-    <p><label class="check"><input id="anon" type="checkbox" data-change="anonymize"${state.anonymize ? ' checked' : ''}> 익명화 (이름 → 학생A, 학생B…, 학번 숨김)</label></p>
+    ${comment}
     <p class="actions">
       <button type="button" id="btn-export-html" class="button-primary" data-action="export-html">HTML 파일로 저장</button>
       <button type="button" id="btn-print" class="button-primary" data-action="print">인쇄 / PDF로 저장</button>
@@ -334,10 +345,22 @@ function viewExport(): string {
     ${state.message ? `<p class="ok" role="status">${esc(state.message)}</p>` : ''}
   </section>
   <section class="card">
-    <h2>미리보기 <span class="meta">A4 1장</span></h2>
-    <div class="a4-wrap"><div class="a4-preview" id="a4-preview">${preview}</div></div>
-  </section>
-</div>`;
+    <h2>미리보기 <span class="meta">A4 1장 · ${esc(curName)}</span></h2>
+    <div class="a4-wrap"><div class="a4-preview" id="a4-preview">${previewHtml()}</div></div>
+  </section>`;
+}
+
+function commentFor(key: string): string | null | undefined {
+  if (!state.includeComment) return null;
+  const t = state.comments[key]?.trim();
+  return t ? t : undefined;
+}
+
+function previewHtml(): string {
+  const c = ctx(false, state.anonymize);
+  if (state.exportScope === 'class') return '<p class="meta">학급 요약은 교사용 여러 쪽 리포트입니다. 미리보기는 학생 리포트만 제공합니다.</p>';
+  if (!c || !state.student) return '<p class="meta">미리볼 학생을 선택하세요.</p>';
+  return `<div class="report"><div class="parent-page">${parentReport(c, state.student, new Date(), { comment: commentFor(state.student) })}</div></div>`;
 }
 
 function viewSettings(): string {
@@ -426,14 +449,14 @@ function reportStudents(): string[] {
 export function buildReport(): string {
   const c = reportCtx();
   if (!c) return '';
-  return buildReportBody(c, { scope: state.exportScope, students: reportStudents(), generatedAt: new Date() });
+  return buildReportBody(c, { scope: state.exportScope, students: reportStudents(), generatedAt: new Date(), commentFor });
 }
 
 function exportHtml(): void {
   const body = buildReport();
   const d = new Date();
   const stamp = `${d.getFullYear()}${String(d.getMonth() + 1).padStart(2, '0')}${String(d.getDate()).padStart(2, '0')}`;
-  const title = `성적 추세 리포트 ${state.ds?.classLabel ?? ''} ${stamp}`.trim();
+  const title = `너의 점수는 — 성적 리포트 ${state.ds?.classLabel ?? ''} ${stamp}`.trim();
   const blob = new Blob([exportHtmlDocument(title, body)], { type: 'text/html;charset=utf-8' });
   const url = URL.createObjectURL(blob);
   const a = document.createElement('a');
@@ -479,6 +502,7 @@ function onAction(el: HTMLElement): void {
     case 'nav':
       state.view = d.view as View;
       state.message = '';
+      state.showRank = false;
       break;
     case 'tab':
       state.tab = d.tab as Tab;
@@ -508,11 +532,26 @@ function onAction(el: HTMLElement): void {
       rebuild();
       break;
     case 'chart-toggle':
-      state.collapsedCharts = state.collapsedCharts.includes(d.key!) ? state.collapsedCharts.filter((k) => k !== d.key) : [...state.collapsedCharts, d.key!];
+      state.expandedCharts = state.expandedCharts.includes(d.key!) ? state.expandedCharts.filter((k) => k !== d.key) : [...state.expandedCharts, d.key!];
       break;
     case 'charts-all': {
       const keys = [...document.querySelectorAll<HTMLElement>('#result-body [data-chart]')].map((el) => el.dataset.chart!);
-      state.collapsedCharts = d.mode === 'collapse' ? [...new Set([...state.collapsedCharts, ...keys])] : state.collapsedCharts.filter((k) => !keys.includes(k));
+      state.expandedCharts = d.mode === 'expand' ? [...new Set([...state.expandedCharts, ...keys])] : state.expandedCharts.filter((k) => !keys.includes(k));
+      break;
+    }
+    case 'chart-zoom': {
+      const src = document.getElementById(`zoom-src-${d.key}`) as HTMLTemplateElement | null;
+      const title = el.querySelector('.pin-title')?.textContent ?? '';
+      if (src) openModal(esc(title), `<div class="zoom-body">${src.innerHTML}</div>`, { wide: true, id: 'zoom-modal' });
+      return;
+    }
+    case 'rank-toggle':
+      state.showRank = !state.showRank;
+      break;
+    case 'tp-select-all': {
+      const all = state.ds!.timepoints.map((t) => t.id);
+      state.tpIds = state.tpIds.length === all.length ? [] : all;
+      state.preset = 'custom';
       break;
     }
     case 'tp-open':
@@ -631,6 +670,10 @@ function onChange(el: HTMLInputElement | HTMLSelectElement | HTMLTextAreaElement
       break;
     case 'student':
       state.student = v;
+      state.showRank = false;
+      break;
+    case 'include-comment':
+      state.includeComment = checked;
       break;
     case 'hide-item':
       state.hidden = checked ? state.hidden.filter((x) => x !== d.item) : [...state.hidden, d.item!];
@@ -675,6 +718,7 @@ export function start(): void {
     const stu = t.closest<HTMLElement | SVGElement>('[data-student]');
     if (stu && t.closest('#app')) {
       state.student = (stu as HTMLElement).dataset.student ?? stu.getAttribute('data-student');
+      state.showRank = false;
       state.tab = 'student';
       state.view = 'analyze';
       render();
@@ -712,6 +756,28 @@ export function start(): void {
       ($('#file-input') as HTMLInputElement | null)?.click();
     }
   });
+  installModalHandlers();
+  $('#manual-btn')?.addEventListener('click', openManual);
+  $('#credit-link')?.addEventListener('click', openCredit);
+  // 선생님 의견: 입력할 때마다 미리보기만 갱신(입력 칸 포커스 유지)
+  document.addEventListener('input', (e) => {
+    const t = e.target as HTMLTextAreaElement;
+    if (t.dataset?.input !== 'comment' || !state.student) return;
+    state.comments = { ...state.comments, [state.student]: t.value };
+    const pv = document.getElementById('a4-preview');
+    if (pv) pv.innerHTML = previewHtml();
+    const cnt = document.getElementById('comment-count');
+    if (cnt) cnt.textContent = `${t.value.length}/250`;
+  });
+  // '추이 그래프에 표시할 과목' 레이어 열림 상태 기억(다시 그려도 열린 채 유지)
+  document.addEventListener(
+    'toggle',
+    (e) => {
+      const t = e.target as HTMLDetailsElement;
+      if (t.id === 'subj-more') state.subjectsOpen = t.open;
+    },
+    true,
+  );
   $('#clear-all')?.addEventListener('click', () => {
     if (!state.files.length || window.confirm('불러온 성적 데이터와 분석 결과를 모두 지웁니다. 계속할까요?')) clearAll();
   });

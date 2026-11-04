@@ -37,9 +37,17 @@ check('CSP: script-src는 해시만(unsafe-inline 없음)', /script-src( 'sha256
 check('외부 <script src>/<link href> 없음', !/<script[^>]+src=|<link[^>]+href=/i.test(dist));
 
 const NS = new Set(['http://www.w3.org/2000/svg', 'http://www.w3.org/1999/xlink', 'http://www.w3.org/1999/xhtml', 'http://www.w3.org/XML/1998/namespace', 'http://www.w3.org/2000/xmlns/']);
-const urls = (s) => (s.match(/(?:https?|wss?|ftp):\/\/[^\s"'`)<>\\]*/gi) ?? []).filter((u) => !NS.has(u));
+// 제작자 안내 모달의 링크: 사용자가 직접 눌러 새 탭으로 여는 주소일 뿐, 앱이 요청하거나 데이터를 붙여 보내지 않는다.
+const CREDIT = new Set(['https://www.instagram.com/trdoolee', 'https://blog.naver.com/trdoolee']);
+const urls = (s) => (s.match(/(?:https?|wss?|ftp):\/\/[^\s"'`)<>\\]*/gi) ?? []).filter((u) => !NS.has(u) && !CREDIT.has(u));
 const distUrls = urls(dist);
-check('dist: 원격 URL 0건(SVG 네임스페이스 제외)', distUrls.length === 0, distUrls.slice(0, 5).join(' '));
+check('dist: 원격 URL 0건(SVG 네임스페이스·제작자 링크 제외)', distUrls.length === 0, distUrls.slice(0, 5).join(' '));
+const creditAnchors = [...dist.matchAll(/<a href=\\?"(https:\/\/[^"\\]+)\\?"([^>]*)>/g)];
+check(
+  '외부 링크는 제작자 링크 2개뿐(새 탭·noopener·noreferrer·쿼리 없음)',
+  creditAnchors.length === 2 && creditAnchors.every((m) => CREDIT.has(m[1]) && /_blank/.test(m[2]) && /noopener noreferrer/.test(m[2])),
+  creditAnchors.map((m) => m[1]).join(' '),
+);
 
 const srcFiles = walk(join(root, 'src')).filter((f) => ['.ts', '.css', '.html'].includes(extname(f)));
 const srcText = srcFiles.map((f) => [relative(root, f), readFileSync(f, 'utf8')]);

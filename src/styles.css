@@ -210,9 +210,8 @@ details.more[open] summary { margin-bottom: 8px; }
 .a4-preview .parent-page { border: 0; padding: 0; max-width: none; }
 /* 열 폭에 맞춰 A4 미리보기를 축소 */
 .grid-export { display: grid; grid-template-columns: minmax(340px, 0.8fr) minmax(0, 1.2fr); gap: calc(var(--space-unit) * 1.25); align-items: start; }
-@media (max-width: 1900px) { .a4-preview { zoom: 0.7; } }
-@media (max-width: 1350px) { .a4-preview { zoom: 0.58; } }
-@media (max-width: 1100px) { .grid-export { grid-template-columns: 1fr; } .a4-preview { zoom: 0.7; } }
+@media (max-width: 1100px) { .a4-preview { zoom: 0.75; } }
+@media (max-width: 860px) { .a4-preview { zoom: 0.55; } }
 fieldset { border: 1px solid var(--color-line); border-radius: 12px; margin: 0; padding: 8px 12px 10px; }
 legend { font-size: 12px; font-weight: 600; color: var(--color-muted); padding: 0 4px; }
 label.check { display: block; margin: 4px 0; font-size: 13px; cursor: pointer; }
@@ -236,4 +235,75 @@ fieldset.cols { columns: 3 140px; }
   body.print-mode #print-root { display: block; }
   body:not(.print-mode) .sidebar, body:not(.print-mode) .topbar, body:not(.print-mode) .filters, body:not(.print-mode) .segmented { display: none; }
   body:not(.print-mode) .shell { display: block; }
+}
+
+/* ---------- 1열 배치 ---------- */
+.stack { display: flex; flex-direction: column; gap: calc(var(--space-unit) * 1.25); }
+table.form th[scope='row'] { white-space: nowrap; }
+
+/* 나이스 다운로드 경로 */
+.path { display: flex; flex-wrap: wrap; align-items: center; gap: 4px 6px; margin: 6px 0 10px; font-size: 12.5px; color: var(--color-muted); }
+.path span { background: var(--color-bg); border: 1px solid var(--color-line); border-radius: 8px; padding: 2px 8px; color: var(--color-text); }
+.path .path-label { background: var(--color-primary); border-color: var(--color-primary); color: #fff; font-weight: 600; }
+
+/* ---------- 대시보드: 늘 보이는 차트 ---------- */
+.pinned { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: var(--space-unit); }
+.pin-card { min-width: 0; }
+.pin-zoom {
+  display: block; width: 100%; text-align: left; cursor: zoom-in;
+  background: var(--color-surface); border: 1px solid transparent; border-radius: var(--radius-card);
+  box-shadow: var(--shadow-card); padding: 10px 12px 12px;
+}
+.pin-zoom:hover { border-color: var(--color-accent); }
+.pin-head { display: flex; justify-content: space-between; align-items: center; gap: 8px; margin-bottom: 4px; }
+.pin-title { font-weight: 700; font-size: 15px; }
+.pin-hint { font-size: 12px; font-weight: 600; color: var(--color-primary); }
+.pin-zoom .chart-svg { background: var(--color-bg); border-radius: 10px; }
+.pin-zoom .chart-svg > text:first-of-type { display: none; }
+@media (max-width: 1100px) { .pinned { grid-template-columns: 1fr; } }
+
+/* 석차 가림 */
+.kpi.rank-hidden { display: flex; flex-direction: column; align-items: flex-start; gap: 4px; }
+.rank-show { padding: 0.45em 1em; font-size: 14px; }
+
+/* ---------- 모달 ---------- */
+body.modal-open { overflow: hidden; }
+.modal-backdrop { position: fixed; inset: 0; z-index: 50; display: grid; place-items: center; padding: var(--space-unit); background: rgba(11, 37, 69, 0.45); }
+.modal {
+  position: relative; width: min(560px, 100%); max-height: calc(100vh - 32px); overflow: auto;
+  background: var(--color-bg); border-radius: var(--radius-card); box-shadow: var(--shadow-card);
+  padding: calc(var(--space-unit) * 1.5);
+}
+.modal.wide { width: min(1180px, 100%); }
+.modal h2 { margin: 0 40px 12px 0; font-size: 20px; }
+.modal-close { position: absolute; top: 12px; right: 12px; width: 36px; height: 36px; border: 1px solid var(--color-line); border-radius: 10px; background: var(--color-bg); font-size: 16px; }
+.modal-close:hover { border-color: var(--color-primary); color: var(--color-primary); }
+.modal-body { display: flex; flex-direction: column; gap: var(--space-unit); }
+.modal-body .card h3 { margin: 0 0 8px; }
+.modal-body ul { margin: 0; padding-left: 20px; }
+.modal-body li { margin: 4px 0; }
+.modal-body a { color: var(--color-primary); }
+.credit-note { margin: 10px 0 0; font-size: 12.5px; font-style: italic; color: var(--color-muted); }
+.zoom-body .chart-svg { max-width: none; background: var(--color-bg); }
+.zoom-body .chart-svg > text:first-of-type { display: none; }
+.manual { display: flex; flex-direction: column; gap: 12px; }
+.manual .card { padding: var(--space-unit); }
+
+/* ---------- 사이드바 설명서·푸터 ---------- */
+.manual-btn { display: flex; align-items: center; gap: 8px; width: 100%; border: 1px solid rgba(255, 255, 255, 0.25); border-radius: 10px; background: rgba(255, 255, 255, 0.06); color: #fff; padding: 9px 12px; font-weight: 600; }
+.manual-btn:hover { background: rgba(255, 255, 255, 0.14); }
+.app-footer { margin-top: auto; padding: calc(var(--space-unit) * 2) calc(var(--space-unit) * 1.5) calc(var(--space-unit) * 1.5); text-align: center; }
+.app-footer p { margin: 0; font-size: 12px; color: var(--color-muted); }
+.credit-link { border: 0; background: none; padding: 0; font: inherit; color: var(--color-muted); text-decoration: underline; text-underline-offset: 2px; cursor: pointer; }
+.credit-link:hover { color: var(--color-primary); }
+
+/* ---------- 내보내기 ---------- */
+.export-grid { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 12px; margin: 10px 0; }
+.export-grid .field { margin-bottom: 6px; }
+.comment-field { margin: 10px 0; }
+.comment-field textarea { max-width: none; resize: vertical; }
+@media (max-width: 860px) { .export-grid { grid-template-columns: 1fr; } }
+
+@media print {
+  #modal-root, .app-footer { display: none !important; }
 }

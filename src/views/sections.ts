@@ -17,8 +17,10 @@ export interface ViewCtx {
   interactive: boolean;
   anonymize: boolean;
   nameOf: (key: string) => string;
-  /** 대시보드에서 접어 둔 차트 키 */
-  collapsed?: Set<string>;
+  /** 대시보드에서 펼친 차트 키(기본은 모두 접힘) */
+  expanded?: Set<string>;
+  /** 대시보드에서 석차·백분위를 보일지(기본 숨김, 상담 중 노출 방지) */
+  showRank?: boolean;
 }
 
 export const tpLabelOf = (ds: Dataset) => (id: string) => ds.timepoints.find((t) => t.id === id)?.label ?? id;
@@ -53,7 +55,7 @@ function figureFor(ctx: ViewCtx) {
   return (key: string, svg: string, tbl = ''): string => {
     if (!ctx.interactive) return figure(svg, tbl);
     const title = /aria-label="([^"]*)"/.exec(svg)?.[1] ?? '';
-    const open = !ctx.collapsed?.has(key);
+    const open = ctx.expanded?.has(key) ?? false;
     const body = open ? `<div class="chart-body" id="cbb-${key}">${svg}${tbl ? `<details class="data-table"><summary>데이터 표 보기</summary>${tbl}</details>` : ''}</div>` : '';
     return `<section class="chart-box${open ? '' : ' collapsed'}" data-chart="${key}"><div class="chart-head"><h3>${title}</h3><button type="button" class="small chart-toggle" id="cb-${key}" data-action="chart-toggle" data-key="${key}" aria-expanded="${open}"${open ? ` aria-controls="cbb-${key}"` : ''}>${open ? '접기 ▴' : '펼치기 ▾'}</button></div>${body}</section>`;
   };
@@ -65,6 +67,17 @@ function table(head: string[], rows: string[][], cls = 'data'): string {
 
 const studentLink = (ctx: ViewCtx, key: string) =>
   ctx.interactive ? `<button type="button" class="link" data-student="${esc(key)}">${esc(ctx.nameOf(key))}</button>` : esc(ctx.nameOf(key));
+
+/** 늘 보이는 차트. 대시보드에서는 누르면 모달로 크게 본다(원본은 <template>에 보관). */
+function pinned(ctx: ViewCtx, list: [string, string, string][]): string {
+  if (!ctx.interactive) return `<div class="charts">${list.map(([, svg, tbl]) => figure(svg, tbl)).join('')}</div>`;
+  return `<div class="pinned">${list
+    .map(([key, svg, tbl]) => {
+      const title = /aria-label="([^"]*)"/.exec(svg)?.[1] ?? '';
+      return `<div class="pin-card"><button type="button" class="pin-zoom" id="zoom-${key}" data-action="chart-zoom" data-key="${key}" aria-label="${title} 크게 보기"><span class="pin-head"><span class="pin-title">${title}</span><span class="pin-hint">크게 보기 ⤢</span></span>${svg}</button><template id="zoom-src-${key}">${svg}${tbl ? `<details class="data-table" open><summary>데이터 표</summary>${tbl}</details>` : ''}</template></div>`;
+    })
+    .join('')}</div>`;
+}
 
 export function selectionSummary(ctx: ViewCtx): string {
   const lab = tpLabelOf(ctx.ds);
@@ -105,22 +118,36 @@ export function studentSections(ctx: ViewCtx, stu: string): string {
   let html = `<header class="student-head"><h2>${esc(ctx.nameOf(stu))}</h2><p class="meta">${esc(ds.classLabel ?? '')}${st?.nos.length ? ` · ${st.nos.join('/')}번` : ''}${!ctx.anonymize && st?.sid ? ` · 학번 ${esc(st.sid)}` : ''}${st?.note ? ` · ${esc(st.note)}` : ''}</p>${selectionSummary(ctx)}</header>`;
 
   const v = avgTrend.values.filter((x): x is number => x !== null);
-  html += `<div class="kpis">${kpi('공통 과목 평균', v.length ? `${fmt(v[0])} → ${fmt(v.at(-1))}` : '–', v.length >= 2 ? `Δ ${fmtSigned(avgTrend.delta)}점` : '')}${kpi('학급 내 위치(z)', avgTrend.deltaZ !== null ? fmtSigned(avgTrend.deltaZ, 2) : '–', `추세: <strong class="trend trend-${avgTrend.label === '상승' ? 'up' : avgTrend.label === '하락' ? 'down' : 'flat'}">${avgTrend.label}</strong>`)}${kpi('최근 학급 석차', lastCell?.rank ? `${lastCell.rank}/${m.stat(AVG, lastTp!)?.n ?? '–'}위` : '–', lastCell?.pr !== null && lastCell?.pr !== undefined ? `백분위 ${fmt(lastCell.pr, 0)}` : '')}${kpi('주의 신호', al ? `${al.reasons.length}건` : '없음', al ? al.reasons.map(esc).join('<br>') : '')}</div>`;
+  const rankVisible = !ctx.interactive || ctx.showRank === true;
+  const rankText = lastCell?.rank ? `${lastCell.rank}/${m.stat(AVG, lastTp!)?.n ?? '–'}위` : '–';
+  const prText = lastCell?.pr !== null && lastCell?.pr !== undefined ? `백분위 ${fmt(lastCell.pr, 0)}` : '';
+  const rankKpi = rankVisible
+    ? kpi('최근 학급 석차', rankText, `${prText}${ctx.interactive ? ' <button type="button" class="small" id="rank-toggle" data-action="rank-toggle">숨기기</button>' : ''}`)
+    : `<div class="kpi rank-hidden"><div class="kpi-label">최근 학급 석차</div><button type="button" class="button-primary rank-show" id="rank-toggle" data-action="rank-toggle">석차 보기</button><div class="kpi-sub">상담 중 노출을 막기 위해 가려 두었습니다</div></div>`;
+  html += `<div class="kpis">${kpi('공통 과목 평균', v.length ? `${fmt(v[0])} → ${fmt(v.at(-1))}` : '–', v.length >= 2 ? `Δ ${fmtSigned(avgTrend.delta)}점` : '')}${kpi('학급 내 위치(z)', avgTrend.deltaZ !== null ? fmtSigned(avgTrend.deltaZ, 2) : '–', `추세: <strong class="trend trend-${avgTrend.label === '상승' ? 'up' : avgTrend.label === '하락' ? 'down' : 'flat'}">${avgTrend.label}</strong>`)}${rankKpi}${kpi('주의 신호', al ? `${al.reasons.length}건` : '없음', al ? al.reasons.map(esc).join('<br>') : '')}</div>`;
 
-  const sentences = interpretStudent(m, stu, settings, lab);
+  // 늘 보이는 차트: 과목별 추이(원점수)·표준화 추이(z)
+  const shown = items.filter((i) => !ctx.hidden.has(i.id));
+  const rawSeries = shown.map((i) => ({ name: i.label, values: m.tpIds.map((tp) => m.cell(i.id, tp, stu)?.raw ?? null), style: items.indexOf(i) }));
+  const zSeries = shown.map((i) => ({ name: i.label, values: m.tpIds.map((tp) => m.cell(i.id, tp, stu)?.z ?? null), style: items.indexOf(i) }));
+  const [zl, zh] = domain('z', zSeries.flatMap((x) => x.values));
+  html += pinned(ctx, [
+    [
+      'stu-lines',
+      lineChart({ title: '과목별 추이 (원점수)', xLabels, series: rawSeries, yMin: 0, yMax: Math.max(100, ...shown.map((i) => fullMarkOf(m, i.id))) }),
+      table(['과목', ...xLabels.map(esc)], rawSeries.map((x) => [esc(x.name), ...x.values.map((y) => fmt(y))])),
+    ],
+    [
+      'stu-z',
+      lineChart({ title: '표준화 추이 (z점수, 학급 기준)', xLabels, series: zSeries, yMin: zl, yMax: zh, band: [-1, 1], hlines: [{ y: 0, label: '학급 평균' }] }),
+      table(['과목', ...xLabels.map(esc)], zSeries.map((x) => [esc(x.name), ...x.values.map((y) => fmt(y, 2))])),
+    ],
+  ]);
+
+  const sentences = interpretStudent(m, stu, settings, lab, { hideRank: !rankVisible });
   html += `<section class="interpret"><h3>해석</h3><ul>${sentences.map((s) => `<li>${esc(s)}</li>`).join('')}</ul></section>`;
 
-  // 1) 과목별 추이(선택 기준)
-  const shown = items.filter((i) => !ctx.hidden.has(i.id));
-  const series = shown.map((i) => ({ name: i.label, values: m.tpIds.map((tp) => metricValue(m.cell(i.id, tp, stu), metric)), style: items.indexOf(i) }));
-  const all = series.flatMap((s) => s.values);
-  const [lo, hi] = domain(metric, all, Math.max(...shown.map((i) => fullMarkOf(m, i.id)), 100));
   html += `<div class="charts">`;
-  html += fig('stu-lines', 
-    lineChart({ title: `과목별 추이 (${METRIC_LABEL[metric]})`, xLabels, series, yMin: lo, yMax: hi, band: metric === 'z' || metric === 'zg' ? [-1, 1] : metric === 't' ? [40, 60] : undefined, hlines: metric === 'z' || metric === 'zg' ? [{ y: 0, label: '학급 평균' }] : metric === 't' ? [{ y: 50, label: '학급 평균' }] : undefined }),
-    table(['과목', ...xLabels.map(esc)], series.map((s) => [esc(s.name), ...s.values.map((x) => fmt(x, metric === 'raw' ? 1 : 2))])),
-  );
-
   // 2) 선택 항목 vs 학급·학년 평균(원점수)
   const focus = m.items.find((i) => i.id === ctx.focus) ?? m.items.find((i) => i.id === AVG)!;
   const fv = m.tpIds.map((tp) => m.cell(focus.id, tp, stu)?.raw ?? null);
@@ -133,13 +160,6 @@ export function studentSections(ctx: ViewCtx, stu: string): string {
     }),
     table(['구분', ...xLabels.map(esc)], [['학생', ...fv.map((x) => fmt(x))], ['학급 평균', ...cm.map((x) => fmt(x))], ['학년 평균', ...gm.map((x) => fmt(x))], ['학년평균 대비', ...m.tpIds.map((tp) => fmtSigned(m.cell(focus.id, tp, stu)?.dev))]]),
   );
-
-  // 3) z 추이
-  if (metric === 'raw' || metric === 't') {
-    const zs = shown.map((i) => ({ name: i.label, values: m.tpIds.map((tp) => m.cell(i.id, tp, stu)?.z ?? null), style: items.indexOf(i) }));
-    const [zl, zh] = domain('z', zs.flatMap((s) => s.values));
-    html += fig('stu-z', lineChart({ title: '표준화 추이 (z점수, 학급 기준)', xLabels, series: zs, yMin: zl, yMax: zh, band: [-1, 1], hlines: [{ y: 0, label: '학급 평균' }] }));
-  }
 
   // 4) 레이더(공통 과목, 최대 3시점)
   const radarTps = m.tpIds.length <= 3 ? m.tpIds : [m.tpIds[0], m.tpIds[Math.floor(m.tpIds.length / 2)], m.tpIds.at(-1)!];
@@ -167,9 +187,9 @@ export function studentSections(ctx: ViewCtx, stu: string): string {
   // 6) 과목 × 시점 z 프로파일
   html += fig('stu-heat', heatmap({ title: '과목별 학급 내 위치 (z)', rows: items.map((i) => i.label), cols: xLabels, values: items.map((i) => m.tpIds.map((tp) => m.cell(i.id, tp, stu)?.z ?? null)), digits: 2 }));
 
-  // 7) 석차·백분위 추이
+  // 7) 석차·백분위 추이(석차 보기를 켠 경우만)
   const prs = m.tpIds.map((tp) => m.cell(AVG, tp, stu)?.pr ?? null);
-  html += fig('stu-pr', 
+  if (rankVisible) html += fig('stu-pr', 
     lineChart({ title: '공통 과목 평균 학급 백분위 추이 (높을수록 상위)', xLabels, series: [{ name: '백분위', values: prs, style: 2 }], yMin: 0, yMax: 100 }),
     table(['구분', ...xLabels.map(esc)], [['석차', ...m.tpIds.map((tp) => { const c = m.cell(AVG, tp, stu); return c?.rank ? `${c.rank}/${m.stat(AVG, tp)?.n}` : '–'; })], ['백분위', ...prs.map((x) => fmt(x, 0))]]),
   );
@@ -182,7 +202,7 @@ export function studentSections(ctx: ViewCtx, stu: string): string {
       const c = m.cell(i.id, tp, stu);
       if (!c) return '<span class="muted">없음</span>';
       const n = m.stat(i.id, tp)?.n;
-      return `<strong>${fmt(c.raw)}</strong><span class="sub">z ${fmtSigned(c.z, 2)} · T ${fmt(c.t)} · ${c.rank ?? '–'}/${n}위 · 학년 ${fmtSigned(c.dev)} · 성취 ${esc(c.achFile ?? c.achCalc ?? '–')}${c.achFile ? '' : '(환산)'}</span>`;
+      return `<strong>${fmt(c.raw)}</strong><span class="sub">z ${fmtSigned(c.z, 2)} · T ${fmt(c.t)}${rankVisible ? ` · ${c.rank ?? '–'}/${n}위` : ''} · 학년 ${fmtSigned(c.dev)} · 성취 ${esc(c.achFile ?? c.achCalc ?? '–')}${c.achFile ? '' : '(환산)'}</span>`;
     }),
   ]);
   html += `<section><h3>과목별 상세</h3>${table(['과목', ...xLabels.map(esc)], rows, 'data detail')}</section>`;
@@ -304,7 +324,12 @@ const ymd = (d: Date) => `${d.getFullYear()}. ${d.getMonth() + 1}. ${d.getDate()
  * 학생·학부모 전달용 A4 1쪽 리포트. z·석차·내부 지표 없이 원점수, 학급·학년 평균, 변화만 보여 준다.
  * 시점이 많으면 표에는 첫 시점과 최근 5개 시점만 싣는다.
  */
-export function parentReport(ctx: ViewCtx, stu: string, generatedAt: Date): string {
+export interface ParentOptions {
+  /** undefined: 손글씨용 빈 칸, 문자열: 입력한 의견, null: 의견 칸 없음 */
+  comment?: string | null;
+}
+
+export function parentReport(ctx: ViewCtx, stu: string, generatedAt: Date, opts: ParentOptions = {}): string {
   const { m, ds } = ctx;
   const lab = tpLabelOf(ds);
   const st = ds.students.find((s) => s.key === stu);
@@ -333,7 +358,7 @@ export function parentReport(ctx: ViewCtx, stu: string, generatedAt: Date): stri
 
   const short = shortTpLabel(ds);
   const line = lineChart({
-    title: '평균 점수 변화 (공통 과목)', xLabels: tps.map(short), width: 340, height: 120, yMin: 0, yMax: 100,
+    title: '평균 점수 변화 (공통 과목)', xLabels: tps.map(short), width: 340, height: 90, compact: true, yMin: 0, yMax: 100,
     series: [
       { name: '학생', values: tps.map((tp) => avg(tp)?.raw ?? null), style: 0 },
       { name: '학급 평균', values: tps.map((tp) => m.stat(AVG, tp)?.mean ?? null), reference: true },
@@ -343,29 +368,35 @@ export function parentReport(ctx: ViewCtx, stu: string, generatedAt: Date): stri
   const lastSubjects = last ? subjects.filter((i) => m.cell(i.id, last, stu)) : [];
   const bars = last
     ? groupedBarChart({
-        title: `과목별 점수: ${lab(last)}`, labels: lastSubjects.map((i) => i.label), width: 340, height: 120, yMin: 0, yMax: 100, showValues: true,
+        title: `과목별 점수: ${lab(last)}`, labels: lastSubjects.map((i) => i.label), width: 340, height: 90, yMin: 0, yMax: 100, showValues: true,
         series: [
           { name: '학생', values: lastSubjects.map((i) => m.cell(i.id, last, stu)?.raw ?? null) },
           { name: '학년 평균', values: lastSubjects.map((i) => m.stat(i.id, last)?.gradeMean ?? null), muted: true },
         ],
       })
     : '';
-  html += `<div class="pr-charts"><figure class="chart">${line}</figure><figure class="chart">${bars}</figure></div>`;
+  // 막대그래프와 같은 과목(최근 시험 과목)만 그려 범례를 짧게 유지
+  const zSeries = (lastSubjects.length ? lastSubjects : subjects)
+    .map((i) => ({ name: i.label, values: tps.map((tp) => m.cell(i.id, tp, stu)?.z ?? null), style: subjects.indexOf(i) }))
+    .filter((x) => x.values.some((v) => v !== null));
+  const zr = Math.max(2, ...zSeries.flatMap((x) => x.values).filter((v): v is number => v !== null).map((v) => Math.ceil(Math.abs(v))));
+  const zLine = lineChart({ title: '표준화 추이 (z점수, 0 = 반 평균)', xLabels: tps.map(short), width: 340, height: 90, compact: true, yMin: -zr, yMax: zr, band: [-1, 1], hlines: [{ y: 0, label: '반 평균' }], series: zSeries });
+  const lines = interpretParent(m, stu, lab);
+  html += `<div class="pr-grid"><figure class="chart">${line}</figure><figure class="chart">${zLine}</figure><figure class="chart">${bars}</figure><section class="pr-notes"><h3>한눈에 보기</h3><ul>${lines.map((l) => `<li>${esc(l)}</li>`).join('')}</ul></section></div>`;
 
   const rows = [...subjects.filter((i) => cols.some((tp) => m.cell(i.id, tp, stu))), ...m.items.filter((i) => i.id === AVG)].map((i) => {
     const vals = cols.map((tp) => m.cell(i.id, tp, stu)?.raw ?? null);
     const present = vals.filter((v): v is number => v !== null);
     const d = present.length >= 2 ? present.at(-1)! - present[0] : null;
-    const lastCell = [...cols].reverse().map((tp) => m.cell(i.id, tp, stu)).find(Boolean);
     const isAvg = i.id === AVG;
-    return `<tr${isAvg ? ' class="pr-avg"' : ''}><th scope="row">${esc(isAvg ? '공통 과목 평균' : i.label)}</th>${vals.map((v) => `<td>${fmt(v)}</td>`).join('')}<td class="${d === null ? '' : d > 0 ? 'up' : d < 0 ? 'down' : ''}">${fmtSigned(d)}</td><td>${isAvg ? '' : esc(lastCell?.achFile ?? lastCell?.achCalc ?? '–')}</td></tr>`;
+    return `<tr${isAvg ? ' class="pr-avg"' : ''}><th scope="row">${esc(isAvg ? '공통 과목 평균' : i.label)}</th>${vals.map((v) => `<td>${fmt(v)}</td>`).join('')}<td class="${d === null ? '' : d > 0 ? 'up' : d < 0 ? 'down' : ''}">${fmtSigned(d)}</td></tr>`;
   });
-  html += `<section class="pr-table"><h3>시험별 점수${tps.length > cols.length ? ` <small>(첫 시험과 최근 ${cols.length - 1}개)</small>` : ''}</h3><table class="data"><thead><tr><th>과목</th>${cols.map((tp) => `<th>${esc(lab(tp))}</th>`).join('')}<th>변화</th><th>성취도*</th></tr></thead><tbody>${rows.join('')}</tbody></table></section>`;
+  html += `<section class="pr-table"><h3>시험별 점수${tps.length > cols.length ? ` <small>(첫 시험과 최근 ${cols.length - 1}개)</small>` : ''}</h3><table class="data"><thead><tr><th>과목</th>${cols.map((tp) => `<th>${esc(lab(tp))}</th>`).join('')}<th>변화</th></tr></thead><tbody>${rows.join('')}</tbody></table></section>`;
 
-  const lines = interpretParent(m, stu, lab);
-  html += `<section class="pr-notes"><h3>한눈에 보기</h3><ul>${lines.map((l) => `<li>${esc(l)}</li>`).join('')}</ul></section>`;
-  html += `<section class="pr-comment"><h3>선생님 의견</h3><div class="pr-lines"><span></span><span></span><span></span></div></section>`;
-  const c = ctx.settings.cutoffs;
-  html += `<footer class="pr-foot"><p>점수는 원점수(만점 100) 기준입니다. 학급 평균은 우리 반, 학년 평균은 학년 전체 응시생 평균입니다. 공통 과목 평균은 비교한 모든 시험에 있는 과목(${esc(m.common.join('·') || '없음')})의 평균입니다. *성취도는 최근 점수를 A(${c[0]} 이상)·B(${c[1]} 이상)·C(${c[2]} 이상)·D(${c[3]} 이상)·E로 환산한 참고값이며, 학교 생활기록부 성취도와 다를 수 있습니다.${m.mixedKinds ? ' 학기 성적에는 수행평가가 포함될 수 있습니다.' : ''}</p><p>이 안내문에는 학생 개인정보가 들어 있습니다. 보관과 전달에 유의해 주세요.</p></footer>`;
+  if (opts.comment !== null) {
+    const text = opts.comment?.trim();
+    html += `<section class="pr-comment"><h3>선생님 의견</h3>${text ? `<div class="pr-comment-text">${esc(text)}</div>` : '<div class="pr-lines"><span></span><span></span><span></span></div>'}</section>`;
+  }
+  html += `<footer class="pr-foot"><p>점수는 원점수(만점 100) 기준입니다. 학급 평균은 우리 반, 학년 평균은 학년 전체 응시생 평균입니다. 공통 과목 평균은 비교한 모든 시험에 있는 과목(${esc(m.common.join('·') || '없음')})의 평균입니다. 표준화 점수(z)는 반 평균을 0으로 두고 반 안에서의 상대 위치를 나타냅니다(+1 이상이면 평균보다 꽤 높음).${m.mixedKinds ? ' 학기 성적에는 수행평가가 포함될 수 있습니다.' : ''}</p><p>이 안내문에는 학생 개인정보가 들어 있습니다. 보관과 전달에 유의해 주세요.</p></footer>`;
   return html;
 }

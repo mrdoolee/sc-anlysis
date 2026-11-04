@@ -88,57 +88,70 @@ interface Legend {
   height: number;
 }
 
-function legend(series: { name: string; style: number; reference?: boolean }[], x0: number, y0: number, width: number): Legend {
+const legendW = (name: string, compact: boolean) => (compact ? 26 + name.length * 10 : 34 + name.length * 12);
+
+function legend(series: { name: string; style: number; reference?: boolean }[], x0: number, y0: number, width: number, compact = false): Legend {
   let x = x0;
   let y = y0;
   let out = '';
   for (const s of series) {
-    const w = 34 + s.name.length * 12;
+    const w = legendW(s.name, compact);
     if (x + w > x0 + width && x > x0) {
       x = x0;
-      y += 18;
+      y += compact ? 15 : 18;
     }
     const color = s.reference ? MUTED : PALETTE[s.style % PALETTE.length];
     const dash = s.reference ? '4 3' : DASHES[s.style % DASHES.length];
-    out += `<line x1="${x}" y1="${y}" x2="${x + 22}" y2="${y}" stroke="${color}" stroke-width="2" ${dash ? `stroke-dasharray="${dash}"` : ''}/>`;
-    if (!s.reference) out += marker(s.style, x + 11, y, color, '');
-    out += `<text x="${x + 27}" y="${y + 4}" font-size="11" fill="${INK}">${esc(s.name)}</text>`;
+    const lw = compact ? 16 : 22;
+    out += `<line x1="${x}" y1="${y}" x2="${x + lw}" y2="${y}" stroke="${color}" stroke-width="2" ${dash ? `stroke-dasharray="${dash}"` : ''}/>`;
+    if (!s.reference) out += marker(s.style, x + lw / 2, y, color, '');
+    out += `<text x="${x + lw + 5}" y="${y + 4}" font-size="${compact ? 10 : 11}" fill="${INK}">${esc(s.name)}</text>`;
     x += w;
   }
-  return { svg: out, height: series.length ? y - y0 + 18 : 0 };
+  return { svg: out, height: series.length ? y - y0 + (compact ? 15 : 18) : 0 };
 }
 
-function measureLegend(names: string[], width: number): number {
+function measureLegend(names: string[], width: number, compact = false): number {
   let x = 0;
   let rows = names.length ? 1 : 0;
   for (const n of names) {
-    const w = 34 + n.length * 12;
+    const w = legendW(n, compact);
     if (x + w > width && x > 0) {
       x = 0;
       rows++;
     }
     x += w;
   }
-  return rows * 18;
+  return rows * (compact ? 15 : 18);
 }
 
-function xAxis(labels: string[], xAt: (i: number) => number, y: number): { svg: string; height: number } {
+function xAxis(labels: string[], xAt: (i: number) => number, y: number, thin = false): { svg: string; height: number } {
   const slot = labels.length > 1 ? xAt(1) - xAt(0) : 200;
   // 한 줄에 들어가는 글자 수에 맞춰 줄바꿈하고, 그래도 넘치면 기울인다.
   const maxChars = Math.max(3, Math.min(9, Math.floor(slot / 10.5)));
   const wrapped = labels.map((l) => wrap(l, maxChars));
-  const rotate = labels.length > 8 || wrapped.some((ls) => ls.some((line) => line.length > maxChars + 0.5));
+  let rotate = labels.length > 8 || wrapped.some((ls) => ls.some((line) => line.length > maxChars + 0.5));
+  // thin: 라벨 일부만(첫·마지막 포함) 가로로 표시해 높이를 아낀다
+  let every = 1;
+  if (rotate && thin) {
+    const need = Math.max(...labels.map((l) => Math.max(...wrap(l, 9).map((x) => x.length)))) * 10.5 + 6;
+    every = Math.max(1, Math.ceil(need / slot));
+    rotate = false;
+  }
+  const thinWrapped = every > 1 ? labels.map((l) => wrap(l, 9)) : wrapped;
   let out = '';
   labels.forEach((l, i) => {
+    if (every > 1 && i % every !== 0 && i !== labels.length - 1) return;
+    if (every > 1 && i !== labels.length - 1 && labels.length - 1 - i < every && i % every === 0 && i !== 0) return;
     const x = xAt(i);
     if (rotate) out += `<text x="${n2(x)}" y="${y + 12}" font-size="10" fill="${INK}" text-anchor="end" transform="rotate(-35 ${n2(x)} ${y + 12})">${esc(l)}</text>`;
     else
-      wrapped[i].forEach((line, k) => {
+      thinWrapped[i].forEach((line, k) => {
         out += `<text x="${n2(x)}" y="${y + 14 + k * 12}" font-size="10.5" fill="${INK}" text-anchor="middle">${esc(line)}</text>`;
       });
   });
   const longest = Math.max(0, ...labels.map((l) => l.length));
-  return { svg: out, height: rotate ? Math.min(90, 14 + longest * 6) : 14 + 12 * Math.max(1, ...wrapped.map((ls) => ls.length)) };
+  return { svg: out, height: rotate ? Math.min(90, 14 + longest * 6) : 14 + 12 * Math.max(1, ...thinWrapped.map((ls) => ls.length)) };
 }
 
 function yAxis(ticks: number[], yAt: (v: number) => number, x0: number, x1: number, label?: string, fmtTick = (v: number) => String(v)): string {
@@ -164,6 +177,8 @@ export interface LineOptions {
   width?: number;
   height?: number;
   desc?: string;
+  /** 좁은 차트용: 작은 범례, x축 라벨 건너뛰기 */
+  compact?: boolean;
 }
 
 export function lineChart(o: LineOptions): string {
@@ -174,8 +189,8 @@ export function lineChart(o: LineOptions): string {
   const n = o.xLabels.length;
   const xAt = (i: number) => pad.l + (plotW * (i + 0.5)) / Math.max(1, n);
   const yAt = (v: number) => pad.t + plotH * (1 - (Math.min(o.yMax, Math.max(o.yMin, v)) - o.yMin) / (o.yMax - o.yMin || 1));
-  const xa = xAxis(o.xLabels, xAt, pad.t + plotH);
-  const legH = measureLegend(o.series.map((s) => s.name), plotW);
+  const xa = xAxis(o.xLabels, xAt, pad.t + plotH, o.compact);
+  const legH = measureLegend(o.series.map((s) => s.name), plotW, o.compact);
   const H = pad.t + plotH + xa.height + legH + 10;
   let body = yAxis(niceTicks(o.yMin, o.yMax), yAt, pad.l, W - pad.r, o.yLabel);
   if (o.band) body += `<rect x="${pad.l}" y="${n2(yAt(o.band[1]))}" width="${plotW}" height="${n2(yAt(o.band[0]) - yAt(o.band[1]))}" fill="#0072B2" fill-opacity="0.07"/>`;
@@ -203,7 +218,7 @@ export function lineChart(o: LineOptions): string {
       });
   });
   body += xa.svg;
-  body += legend(o.series.map((s, i) => ({ name: s.name, style: s.style ?? i, reference: s.reference })), pad.l, pad.t + plotH + xa.height + 6, plotW).svg;
+  body += legend(o.series.map((s, i) => ({ name: s.name, style: s.style ?? i, reference: s.reference })), pad.l, pad.t + plotH + xa.height + 6, plotW, o.compact).svg;
   return frame(W, H, o.title, body, o.desc);
 }
 

@@ -10,6 +10,8 @@ export interface ReportOptions {
   scope: ExportScope;
   students: string[];
   generatedAt: Date;
+  /** 학생별 선생님 의견: null = 칸 없음, undefined = 빈 칸, 문자열 = 입력 내용 */
+  commentFor?: (key: string) => string | null | undefined;
 }
 
 const dateText = (d: Date) => `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`;
@@ -27,7 +29,7 @@ export function buildReportBody(ctx: ViewCtx, o: ReportOptions): string {
     pages.push(`<section class="page">${pageHeader(ctx, o, '학급 성적 추세 리포트')}${classSections(ctx)}${alertsSection(ctx)}${gapSection(ctx)}${footnotes(ctx)}${privacy}</section>`);
   }
   if (o.scope !== 'class')
-    for (const s of o.students) pages.push(`<section class="page parent-page">${parentReport(ctx, s, o.generatedAt)}</section>`);
+    for (const s of o.students) pages.push(`<section class="page parent-page">${parentReport(ctx, s, o.generatedAt, { comment: o.commentFor ? o.commentFor(s) : undefined })}</section>`);
   return `<div class="report">${pages.join('')}</div>`;
 }
 

@@ -3,7 +3,7 @@ import { AVG, studentTrend, type Matrix } from './analysis.ts';
 import type { Settings } from './settings.ts';
 import { fmt, fmtSigned } from './stats.ts';
 
-export function interpretStudent(m: Matrix, stu: string, settings: Settings, tpLabel: (id: string) => string): string[] {
+export function interpretStudent(m: Matrix, stu: string, settings: Settings, tpLabel: (id: string) => string, opts: { hideRank?: boolean } = {}): string[] {
   const out: string[] = [];
   const label = (id: string) => m.items.find((i) => i.id === id)?.label ?? id;
   if (m.tpIds.length < 2) {
@@ -50,7 +50,7 @@ export function interpretStudent(m: Matrix, stu: string, settings: Settings, tpL
     if (devs.length) out.push(`${tpLabel(last)}에 학년 평균보다 높은 과목 ${devs.filter((d) => d > 0).length}개, 낮은 과목 ${devs.filter((d) => d < 0).length}개입니다.`);
     const c = m.cell(AVG, last, stu);
     const st = m.stat(AVG, last);
-    if (c?.rank && st) out.push(`${tpLabel(last)} 공통 과목 평균 학급 석차는 ${c.rank}/${st.n}위(백분위 ${fmt(c.pr, 0)})입니다.`);
+    if (c?.rank && st && !opts.hideRank) out.push(`${tpLabel(last)} 공통 과목 평균 학급 석차는 ${c.rank}/${st.n}위(백분위 ${fmt(c.pr, 0)})입니다.`);
   }
   if (m.mixedKinds) out.push('학기 성적(수행평가 등 포함 가능)과 지필고사 점수는 측정 기준이 다를 수 있으므로 원점수 차이는 참고로만 보세요.');
   return out;

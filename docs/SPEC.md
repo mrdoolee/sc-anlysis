@@ -7,7 +7,7 @@
 ## 2. 개인정보 불변 조건
 | # | 조건 | 구현 | 검증 |
 |---|---|---|---|
-| P1 | 런타임 네트워크 요청 0건 | 서버·CDN·원격 리소스 없음. 단일 `index.html`에 JS/CSS 인라인 | `npm run e2e` 요청 로그, `npm run privacy` URL 스캔 |
+| P1 | 런타임 네트워크 요청 0건(예외: 사용자가 직접 누르는 제작자 링크 2개, 새 탭·noreferrer) | 서버·CDN·원격 리소스 없음. 단일 `index.html`에 JS/CSS 인라인 | `npm run e2e` 요청 로그, `npm run privacy` URL 스캔 |
 | P2 | CSP meta | `default-src 'none'; script-src 'sha256-…'; style-src 'sha256-…'; img-src 'self' data: blob:; connect-src 'none'; font-src data:; form-action 'none'; base-uri 'none'; object-src 'none'` | `npm run privacy` |
 | P3 | 텔레메트리·외부 AI·로그 금지 | 의존성은 `fflate`(압축 해제)만. `console.*`로 개인정보 출력 없음 | `npm run privacy` (console 사용 스캔) |
 | P4 | 메모리 전용 | 성적·이름은 JS 메모리에만. `localStorage`에는 설정(임계값·성취도 기준·과목 묶음·과목 별칭)만 저장 | 코드 리뷰 + `npm run privacy` (저장 키 스캔) |
@@ -39,7 +39,7 @@
 - 내부 계산은 원값, 표시는 소수 첫째 자리.
 
 ## 5. 시나리오 (시점 선택 프리셋)
-S1 학년 전환(직전 학년 학기 성적 + 현재 학년 첫 고사), S2 학년 내 고사 누계, S3 전체 이력, S4 두 시점 A↔B, 사용자 지정.
+S1 학년 전환, S2 학년 내 고사 누계, S3 전체 이력(기본), S4 두 시점 A↔B — 화면에서는 드롭다운 없이 '비교할 시점' 버튼으로 직접 고른다.
 분석 탭: 학생 개인(S5 과목 프로파일, S6 석차·백분위 포함) / 학급 개관(S7) / 주의 학생(S8) / 학기종합↔고사(S9). 단위 토글 과목 ↔ 교과군(S10).
 
 ## 6. 출력
