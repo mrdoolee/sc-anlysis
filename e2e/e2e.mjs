@@ -107,10 +107,17 @@ check('시점 버튼으로 선택 해제', (await selTp()) === 4);
 await page.click('#tp-all');
 check('모두 선택', (await selTp()) === 5);
 
-// 추이 과목 레이어: 버튼을 눌러도 열린 채 유지
-await page.click('#subj-more summary');
+// 분석 조건은 ① 시점 → ② 분석 과목 → ③ 분석 대상 순서
+const stepOrder = await page.evaluate(() => {
+  const els = [1, 2, 3].map((n) => document.getElementById(`step-${n}`));
+  if (els.some((e) => !e)) return false;
+  const after = (a, b) => !!(a.compareDocumentPosition(b) & Node.DOCUMENT_POSITION_FOLLOWING);
+  return after(els[0], els[1]) && after(els[1], els[2]) && els[0].contains(document.querySelector('[data-change="tp-toggle"]')) && els[1].contains(document.getElementById('c-metric')) && els[1].contains(document.getElementById('subj-chips')) && els[2].contains(document.getElementById('tab-student')) && els[2].contains(document.getElementById('c-student'));
+});
+check('분석 조건 3단계 순서(시점→과목→대상)', stepOrder);
+// 그래프 표시 과목: 늘 보이는 버튼
 await page.click('label:has(#hid-0)');
-check('표시 과목 레이어 유지', (await page.locator('#subj-more[open]').count()) === 1 && !(await page.isChecked('#hid-0')));
+check('표시 과목 버튼 토글(늘 보임)', (await page.locator('#subj-chips').isVisible()) && !(await page.isChecked('#hid-0')));
 await page.click('label:has(#hid-0)');
 
 // 늘 보이는 차트 2개 + 나머지는 기본 접힘
@@ -152,6 +159,15 @@ await page.selectOption('#c-student', { index: 2 });
 check('학생 바꾸면 석차 다시 숨김', !/\d+\/\d+위/.test(await bodyText()));
 await page.selectOption('#c-student', { index: 0 });
 
+// AI 분석 프롬프트(익명): 학생
+const realNames = Array.from({ length: 28 }, (_, i) => `학생${String(i + 1).padStart(2, '0')}`);
+await page.click('#btn-prompt');
+let ptext = await page.inputValue('#prompt-text');
+check('학생 AI 프롬프트: 이름·번호·반 없음', ptext.includes('대상 학생') && ptext.includes('# 요청') && !realNames.some((n) => ptext.includes(n)) && !/\d+\s*반|\d+\s*번|석차|백분위/.test(ptext));
+await page.click('#btn-copy-prompt');
+check('프롬프트 복사 버튼', ((await page.locator('#copy-status').textContent()) ?? '').includes('복사했습니다'));
+await page.keyboard.press('Escape');
+
 // 제작자 모달: 배경 클릭·ESC·✕로 닫힘, 상태 불변
 const before = { view: await page.getAttribute('#nav-analyze', 'aria-current'), stu: await page.inputValue('#c-student'), tps: await selTp() };
 await page.click('#credit-link');
@@ -165,6 +181,11 @@ const after = { view: await page.getAttribute('#nav-analyze', 'aria-current'), s
 check('모달은 앱 상태에 영향 없음', JSON.stringify(before) === JSON.stringify(after) && (await page.locator('#modal-root .modal').count()) === 0);
 
 await page.click('#tab-class');
+check('학급 분석에서는 학생 선택 없음', (await page.locator('#c-student').count()) === 0);
+await page.click('#btn-prompt');
+ptext = await page.inputValue('#prompt-text');
+check('학급 AI 프롬프트: 익명 코드만', /\| S01 \|/.test(ptext) && /\| S28 \|/.test(ptext) && !realNames.some((n) => ptext.includes(n)) && !/\d+\s*반|\d+\s*번/.test(ptext));
+await page.keyboard.press('Escape');
 check('학급 개관: 차트 기본 접힘', (await page.locator('#result-body .chart-box').count()) >= 6 && (await svgCount()) === 0);
 await page.click('#charts-expand');
 check('학급 개관 차트 펼침', (await svgCount()) >= 6);

@@ -8,7 +8,8 @@ import { readXlsx } from '../core/xlsx.ts';
 import { esc } from '../charts/svg.ts';
 import { buildReportBody, exportHtmlDocument, type ExportScope } from '../report/report.ts';
 import { openCredit, openManual, openModal, openPrivacy, installModalHandlers } from './modal.ts';
-import { PRIVACY_NOTE, alertsSection, anonymizer, classSections, footnotes, parentReport, studentSections, type ViewCtx } from '../views/sections.ts';
+import { PRIVACY_NOTE, alertsSection, anonymizer, classSections, footnotes, parentReport, studentSections, tpLabelOf, type ViewCtx } from '../views/sections.ts';
+import { classPrompt, studentPrompt } from '../core/prompt.ts';
 
 type View = 'load' | 'check' | 'analyze' | 'export' | 'settings';
 type Tab = 'student' | 'class' | 'alerts';
@@ -272,40 +273,107 @@ function viewCheck(): string {
 <p><button type="button" class="button-primary" data-action="nav" data-view="analyze">다음: 대시보드 →</button></p>`;
 }
 
+/** 분석 조건: ① 시점 → ② 분석 과목 → ③ 분석 대상 순서로 위에서 아래로 고른다. */
 function filters(m: Matrix): string {
   const ds = state.ds!;
-  const grades = gradesOf(ds);
   const tps = ds.timepoints;
   const hasSigma = Object.keys(state.gradeSigma).length > 0;
   const field = (id: string, label: string, control: string) => `<div class="field"><label for="${id}">${label}</label>${control}</div>`;
-  return `<section class="card filters" aria-label="분석 조건">
-  <div class="filter-row">
-    ${field('c-student', '학생', `<select id="c-student" data-change="student">${ds.students.map((s) => opt(s.key, `${s.nos[0] ?? ''} ${s.name}`, state.student === s.key)).join('')}</select>`)}
-    ${field('c-metric', '점수 기준', `<select id="c-metric" data-change="metric">${(Object.keys(METRIC_LABEL) as Metric[]).filter((k) => k !== 'zg' || hasSigma).map((k) => opt(k, METRIC_LABEL[k], state.metric === k)).join('')}</select>`)}
-    ${field('c-focus', '중심 항목', `<select id="c-focus" data-change="focus">${m.items.map((i) => opt(i.id, i.label, state.focus === i.id)).join('')}</select>`)}
-    <div class="field"><span class="group-label">단위</span><div class="chips">${chip('u-subject', 'value="subject" data-change="unit"', state.unit === 'subject', '과목', 'radio', 'unit')}${chip('u-group', 'value="group" data-change="unit"', state.unit === 'group', '교과군', 'radio', 'unit')}</div></div>
-  </div>
-  <div class="field"><span class="group-label">비교할 시점 (${state.tpIds.length}/${tps.length}개 선택) <button type="button" class="small" id="tp-all" data-action="tp-select-all">${state.tpIds.length === tps.length ? '모두 해제' : '모두 선택'}</button></span><div class="chips">${tps.map((t, i) => chip(`tp-${i}`, `data-change="tp-toggle" data-id="${esc(t.id)}"`, state.tpIds.includes(t.id), `${esc(t.label)}${t.kind === 'semester' ? ' <span class="tag">학기</span>' : ''}`)).join('')}</div></div>
-  <details class="more" id="subj-more"${state.subjectsOpen ? ' open' : ''}><summary>추이 그래프에 표시할 과목</summary><div class="chips">${m.items.filter((i) => i.id !== AVG).map((i, k) => chip(`hid-${k}`, `data-change="hide-item" data-item="${esc(i.id)}"`, !state.hidden.includes(i.id), esc(i.label))).join('')}</div></details>
+  const step = (n: number, title: string, desc: string, body: string, extra = '') =>
+    `<div class="fstep" id="step-${n}"><div class="fstep-head"><span class="fstep-no" aria-hidden="true">${n}</span><div><h3>${title}</h3><p class="meta">${desc}</p></div>${extra}</div><div class="fstep-body">${body}</div></div>`;
+  const tabs: [Tab, string][] = [
+    ['student', '학생 분석'],
+    ['class', '학급 분석'],
+    ['alerts', '주의 학생'],
+  ];
+  const subjects = m.items.filter((i) => i.id !== AVG);
+  return `<section class="card filters steps" aria-label="분석 조건">
+  ${step(
+    1,
+    `시점 선택 <span class="count">${state.tpIds.length}/${tps.length}</span>`,
+    '비교할 시험·학기를 고릅니다. 학기 성적에는 수행평가가 포함될 수 있습니다.',
+    `<div class="chips">${tps.map((t, i) => chip(`tp-${i}`, `data-change="tp-toggle" data-id="${esc(t.id)}"`, state.tpIds.includes(t.id), `${esc(t.label)}${t.kind === 'semester' ? ' <span class="tag">학기</span>' : ''}`)).join('')}</div>`,
+    `<button type="button" class="small fstep-action" id="tp-all" data-action="tp-select-all">${state.tpIds.length === tps.length ? '모두 해제' : '모두 선택'}</button>`,
+  )}
+  ${step(
+    2,
+    '분석 과목',
+    '과목 단위와 점수 기준을 정하고, 그래프에 표시할 과목을 고릅니다.',
+    `<div class="filter-row">
+      <div class="field"><span class="group-label">단위</span><div class="chips">${chip('u-subject', 'value="subject" data-change="unit"', state.unit === 'subject', '과목', 'radio', 'unit')}${chip('u-group', 'value="group" data-change="unit"', state.unit === 'group', '교과군', 'radio', 'unit')}</div></div>
+      ${field('c-metric', '점수 기준', `<select id="c-metric" data-change="metric">${(Object.keys(METRIC_LABEL) as Metric[]).filter((k) => k !== 'zg' || hasSigma).map((k) => opt(k, METRIC_LABEL[k], state.metric === k)).join('')}</select>`)}
+      ${field('c-focus', '중심 과목 (비교·학급 차트)', `<select id="c-focus" data-change="focus">${m.items.map((i) => opt(i.id, i.label, state.focus === i.id)).join('')}</select>`)}
+    </div>
+    <div class="field" id="subj-chips"><span class="group-label">그래프에 표시할 과목 (${subjects.length - state.hidden.filter((h) => subjects.some((x) => x.id === h)).length}/${subjects.length})</span><div class="chips">${subjects.map((i, k) => chip(`hid-${k}`, `data-change="hide-item" data-item="${esc(i.id)}"`, !state.hidden.includes(i.id), esc(i.label))).join('')}</div></div>`,
+  )}
+  ${step(
+    3,
+    '분석 대상',
+    '학생 한 명을 보거나 학급 전체를 봅니다.',
+    `<div class="target-row"><div class="segmented" role="tablist" aria-label="분석 대상">${tabs.map(([t, l]) => `<button type="button" role="tab" id="tab-${t}" class="tab${state.tab === t ? ' active' : ''}" aria-selected="${state.tab === t}" data-action="tab" data-tab="${t}">${l}</button>`).join('')}</div>
+    ${state.tab === 'student' ? field('c-student', '학생', `<select id="c-student" data-change="student">${ds.students.map((s) => opt(s.key, `${s.nos[0] ?? ''} ${s.name}`, state.student === s.key)).join('')}</select>`) : ''}</div>`,
+  )}
 </section>`;
 }
 
 function viewAnalyze(): string {
   const c = ctx(true);
   if (!c) return '';
-  const tabs: [Tab, string][] = [
-    ['student', '학생 개인'],
-    ['class', '학급 개관'],
-    ['alerts', '주의 학생'],
-  ];
   let body = '';
-  if (!state.tpIds.length) body = '<p class="alert">분석할 시점을 하나 이상 선택하세요.</p>';
-  else if (state.tab === 'student') body = state.student ? studentSections(c, state.student) + footnotes(c) : '<p>학생을 선택하세요.</p>';
+  if (!state.tpIds.length) body = '<p class="alert">① 시점 선택에서 분석할 시점을 하나 이상 고르세요.</p>';
+  else if (state.tab === 'student') body = state.student ? studentSections(c, state.student) + footnotes(c) : '<p>③ 분석 대상에서 학생을 고르세요.</p>';
   else if (state.tab === 'class') body = classSections(c) + footnotes(c);
   else body = alertsSection(c);
+  const promptLabel = state.tab === 'student' ? '학생 분석 AI 프롬프트' : '학급 분석 AI 프롬프트';
   return `${filters(c.m)}
-  <div class="dash-toolbar"><div class="segmented" role="tablist">${tabs.map(([t, l]) => `<button type="button" role="tab" id="tab-${t}" class="tab${state.tab === t ? ' active' : ''}" aria-selected="${state.tab === t}" data-action="tab" data-tab="${t}">${l}</button>`).join('')}</div><span class="actions"><button type="button" class="button-ghost" id="charts-collapse" data-action="charts-all" data-mode="collapse">차트 모두 접기</button><button type="button" class="button-ghost" id="charts-expand" data-action="charts-all" data-mode="expand">차트 모두 펼치기</button></span></div>
+  <div class="dash-toolbar"><h2 class="result-title">${state.tab === 'student' ? '학생 분석 결과' : state.tab === 'class' ? '학급 분석 결과' : '주의 학생'}</h2><span class="actions">${state.tpIds.length ? `<button type="button" class="button-ghost ai-btn" id="btn-prompt" data-action="make-prompt">✦ ${promptLabel}</button>` : ''}<button type="button" class="button-ghost" id="charts-collapse" data-action="charts-all" data-mode="collapse">차트 모두 접기</button><button type="button" class="button-ghost" id="charts-expand" data-action="charts-all" data-mode="expand">차트 모두 펼치기</button></span></div>
   <div class="report dash-body" id="result-body">${body}</div>`;
+}
+
+/** LLM용 익명 프롬프트를 모달로 보여 준다(전송하지 않음, 교사가 확인 후 복사). */
+function openPromptModal(): void {
+  const m = matrix();
+  if (!m || !state.ds) return;
+  const lab = tpLabelOf(state.ds);
+  const isStudent = state.tab === 'student' && !!state.student;
+  const text = isStudent ? studentPrompt(m, state.ds, state.student!, state.settings, lab) : classPrompt(m, state.ds, state.settings, lab);
+  openModal(
+    isStudent ? 'AI 분석 프롬프트 (학생, 익명)' : 'AI 분석 프롬프트 (학급, 익명)',
+    `<div class="prompt-note">
+      <p><strong>이름·학번·번호·반·학교·선생님 의견은 넣지 않았습니다.</strong> ${isStudent ? "학생은 '대상 학생'으로" : '학생은 무작위 순서의 익명 코드(S01…)로'} 표시하고, 석차·백분위도 뺐습니다.</p>
+      <p>이 앱은 프롬프트를 어디에도 보내지 않습니다. 내용을 확인한 뒤 복사해, 학교에서 허용한 AI 도구에 직접 붙여 넣으세요.</p>
+    </div>
+    <label class="group-label" for="prompt-text">프롬프트 (분석 조건: 시점 ${m.tpIds.length}개, ${state.unit === 'group' ? '교과군' : '과목'} 단위)</label>
+    <textarea id="prompt-text" class="prompt-text" rows="18" readonly>${esc(text)}</textarea>`,
+    {
+      wide: true,
+      id: 'prompt-modal',
+      subtitle: '익명 데이터만 담은 LLM 분석 요청문',
+      footer: '<span class="meta" id="copy-status" role="status"></span><button type="button" class="button-primary" id="btn-copy-prompt">복사하기</button>',
+    },
+  );
+  document.getElementById('btn-copy-prompt')?.addEventListener('click', async () => {
+    const ta = document.getElementById('prompt-text') as HTMLTextAreaElement;
+    const status = document.getElementById('copy-status')!;
+    // 선택 후 복사 명령이 가장 널리 동작한다. 실패하면 클립보드 API를 짧게 시도한다.
+    ta.focus();
+    ta.select();
+    let ok = false;
+    try {
+      ok = document.execCommand('copy');
+    } catch {
+      ok = false;
+    }
+    if (!ok && navigator.clipboard) {
+      try {
+        await Promise.race([navigator.clipboard.writeText(ta.value), new Promise((_, no) => setTimeout(() => no(new Error('timeout')), 1500))]);
+        ok = true;
+      } catch {
+        ok = false;
+      }
+    }
+    status.textContent = ok ? '복사했습니다. AI 도구에 붙여 넣으세요.' : '자동 복사가 되지 않습니다. 텍스트가 선택되어 있으니 Ctrl+C로 복사하세요.';
+  });
 }
 
 function viewExport(): string {
@@ -551,6 +619,9 @@ function onAction(el: HTMLElement): void {
       state.classSort = state.classSort.col === col ? { col, dir: state.classSort.dir === 'asc' ? 'desc' : 'asc' } : { col, dir: col === 'name' ? 'asc' : 'desc' };
       break;
     }
+    case 'make-prompt':
+      openPromptModal();
+      return;
     case 'rank-toggle':
       state.showRank = !state.showRank;
       break;
