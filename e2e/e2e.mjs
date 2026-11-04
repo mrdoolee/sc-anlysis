@@ -39,18 +39,17 @@ page.on('pageerror', (e) => consoleErrors.push(String(e)));
 
 const url = pathToFileURL(distHtml).href;
 await page.goto(url);
-check('file://로 앱 로드', (await page.locator('h1').textContent()) === '너의 점수는' && (await page.title()) === '너의 점수는: 중학교 성적 분석 도구(학급 담임용)');
+check('file://로 앱 로드', (await page.locator('h1').textContent()) === '몇점' && (await page.title()) === '몇점: 성적 분석 도우미(중학교 학급 담임용)');
 check('불러오기: 나이스 다운로드 경로 안내', (await page.locator('.path').count()) === 2 && (await page.locator('.steps-help').textContent()).includes('학급별일람표조회-전체교과목'));
 check('지원 형식: 괄호 설명 없음', !/(가로형)|(세로형)/.test(await page.locator('.steps-help').textContent()));
 
 // 사이드바 최상단 개인정보보호 박스 → 안내 모달
 const firstBlock = await page.evaluate(() => {
-  const side = document.querySelector('.sidebar');
+  const foot = document.querySelector('.sidebar-foot');
   const card = document.querySelector('.privacy-card');
-  const nav = document.getElementById('nav');
-  return !!card && side.contains(card) && !!(card.compareDocumentPosition(nav) & Node.DOCUMENT_POSITION_FOLLOWING);
+  return !!card && foot.lastElementChild === card;
 });
-check('개인정보 박스가 메뉴 위', firstBlock);
+check('개인정보 박스가 사이드바 맨 아래', firstBlock);
 await page.click('#privacy-btn');
 check('개인정보보호 안내 모달', (await page.locator('#privacy-modal[role="dialog"]').count()) === 1 && (await page.locator('#privacy-modal .privacy-box li').count()) >= 3 && (await page.locator('#privacy-ok').textContent()) === '확인 및 닫기');
 await page.click('#privacy-ok');

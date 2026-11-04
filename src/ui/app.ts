@@ -456,7 +456,7 @@ function exportHtml(): void {
   const body = buildReport();
   const d = new Date();
   const stamp = `${d.getFullYear()}${String(d.getMonth() + 1).padStart(2, '0')}${String(d.getDate()).padStart(2, '0')}`;
-  const title = `너의 점수는 — 성적 리포트 ${state.ds?.classLabel ?? ''} ${stamp}`.trim();
+  const title = `몇점 — 성적 리포트 ${state.ds?.classLabel ?? ''} ${stamp}`.trim();
   const blob = new Blob([exportHtmlDocument(title, body)], { type: 'text/html;charset=utf-8' });
   const url = URL.createObjectURL(blob);
   const a = document.createElement('a');

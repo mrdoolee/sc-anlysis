@@ -46,7 +46,7 @@ button:disabled { opacity: 0.45; cursor: not-allowed; }
 /* ---------- 레이아웃 ---------- */
 .shell { display: grid; grid-template-columns: 240px minmax(0, 1fr); min-height: 100vh; }
 .sidebar {
-  position: sticky; top: 0; height: 100vh;
+  position: sticky; top: 0; height: 100vh; overflow-y: auto;
   display: flex; flex-direction: column; gap: calc(var(--space-unit) * 1.25);
   padding: calc(var(--space-unit) * 1.25) var(--space-unit);
   background: var(--color-text); color: #fff;
