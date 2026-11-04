@@ -1,0 +1,138 @@
+/* 리포트·차트 공통 스타일. 앱 화면, 인쇄, HTML 내보내기에서 함께 쓴다.
+   Pretendard는 앱에만 내장된다(styles.css). 내보낸 HTML은 설치된 Pretendard 또는 시스템 한글 글꼴을 쓴다. */
+:root {
+  --font-heading: 'Pretendard', 'Pretendard Variable', 'Malgun Gothic', '맑은 고딕', 'Apple SD Gothic Neo', sans-serif;
+  --font-body: 'Pretendard', 'Pretendard Variable', 'Malgun Gothic', '맑은 고딕', 'Apple SD Gothic Neo', sans-serif;
+  --color-bg: #ffffff;
+  --color-surface: #eff6ff;
+  --color-text: #0b2545;
+  --color-primary: #1d4ed8;
+  --color-accent: #38bdf8;
+  --radius-card: 14px;
+  --shadow-card: 0 10px 28px rgba(18, 24, 38, 0.08);
+  --space-unit: 16px;
+  /* 파생 토큰 */
+  --color-muted: #4a5b78;
+  --color-line: #d5e2f5;
+  --color-up: #1d4ed8;
+  --color-down: #c2410c;
+  --color-warn-bg: #fff7e6;
+  --color-warn-line: #f2b443;
+}
+
+.report-doc,
+.report {
+  font-family: var(--font-body);
+  color: var(--color-text);
+  line-height: 1.5;
+}
+.report-doc { margin: 0 auto; max-width: 860px; padding: var(--space-unit); background: var(--color-bg); }
+.report-doc .page { background: var(--color-bg); }
+.report h2, .report h3, .report h4 { font-family: var(--font-heading); }
+.report .page { padding: 8px 0 24px; border-bottom: 2px solid var(--color-line); margin-bottom: 24px; }
+.report-head { display: flex; justify-content: space-between; gap: 8px; font-size: 12px; color: var(--color-muted); border-bottom: 1px solid var(--color-line); padding-bottom: 4px; margin-bottom: 10px; }
+
+.report h2 { font-size: 20px; margin: 4px 0; }
+.report h3 { font-size: 15px; margin: 18px 0 8px; }
+.report h4 { font-size: 13px; margin: 12px 0 4px; }
+.meta { color: var(--color-muted); font-size: 12.5px; margin: 2px 0; }
+.muted { color: var(--color-muted); }
+
+.card, .kpi, figure.chart {
+  background: var(--color-surface);
+  border-radius: var(--radius-card);
+  box-shadow: var(--shadow-card);
+}
+.card { padding: calc(var(--space-unit) * 1.25); }
+
+.kpis { display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); gap: 12px; margin: 12px 0; }
+.kpi { padding: 12px 14px; }
+.kpi-label { font-size: 12px; color: var(--color-muted); }
+.kpi-value { font-size: 22px; font-weight: 700; letter-spacing: -0.01em; }
+.kpi-sub { font-size: 12px; color: var(--color-muted); }
+
+.trend { font-weight: 700; }
+.trend-up { color: var(--color-up); }
+.trend-up::before { content: '▲ '; }
+.trend-down { color: var(--color-down); }
+.trend-down::before { content: '▼ '; }
+.trend-flat::before { content: '■ '; }
+
+.interpret ul { margin: 4px 0; padding-left: 20px; }
+.interpret li { margin: 3px 0; }
+
+.charts { display: grid; grid-template-columns: repeat(auto-fill, minmax(420px, 1fr)); gap: var(--space-unit); }
+figure.chart { margin: 0; padding: 10px; break-inside: avoid; }
+.chart-svg { width: 100%; height: auto; display: block; }
+.chart-svg.compact { max-width: 440px; margin: 0 auto; }
+.data-table summary { cursor: pointer; font-size: 12px; color: var(--color-primary); padding: 4px 2px; }
+
+table.data { border-collapse: collapse; width: 100%; font-size: 12px; margin: 6px 0; background: var(--color-bg); }
+table.data th, table.data td { border: 1px solid var(--color-line); padding: 4px 6px; text-align: right; vertical-align: top; }
+table.data thead th { background: var(--color-surface); text-align: center; font-weight: 600; }
+table.data tbody th { text-align: left; font-weight: 600; }
+table.detail td strong { display: block; font-size: 13px; }
+table.detail .sub { display: block; color: var(--color-muted); font-size: 10.5px; }
+ul.reasons { margin: 0; padding-left: 16px; text-align: left; }
+
+.footnotes { font-size: 11px; color: var(--color-muted); border-top: 1px solid var(--color-line); margin-top: 14px; padding-top: 6px; }
+.footnotes h4 { margin: 0 0 2px; font-size: 11.5px; }
+.footnotes ol { margin: 0; padding-left: 18px; }
+.privacy { font-size: 11px; background: var(--color-warn-bg); border: 1px solid var(--color-warn-line); border-radius: 8px; padding: 4px 8px; }
+
+/* ---------- 학생·학부모용 A4 1쪽 리포트 ---------- */
+.parent-page { max-width: 760px; margin-left: auto; margin-right: auto; display: flex; flex-direction: column; gap: 10px; }
+.report .parent-page { padding: 24px 28px; border: 1px solid var(--color-line); border-radius: var(--radius-card); background: var(--color-bg); }
+.pr-head { display: flex; justify-content: space-between; align-items: flex-end; gap: 12px; border-bottom: 3px solid var(--color-primary); padding-bottom: 6px; line-height: 1.35; }
+.pr-head h2 { font-size: 24px; margin: 0; line-height: 1.2; }
+.pr-kicker { margin: 0; font-size: 12px; font-weight: 700; color: var(--color-primary); letter-spacing: 0.04em; }
+.pr-period { display: flex; flex-direction: column; align-items: flex-end; font-size: 11.5px; color: var(--color-muted); }
+.pr-period strong { font-size: 13px; color: var(--color-text); }
+.pr-kpis { display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); gap: 8px; }
+.pr-kpi { background: var(--color-surface); border-radius: 10px; padding: 8px 10px; display: flex; flex-direction: column; border-top: 3px solid var(--color-accent); }
+.pr-kpi span { font-size: 11px; color: var(--color-muted); }
+.pr-kpi strong { font-size: 19px; line-height: 1.25; }
+.pr-kpi em { font-style: normal; font-size: 10.5px; color: var(--color-muted); }
+.pr-kpi.up strong { color: var(--color-up); }
+.pr-kpi.down strong { color: var(--color-down); }
+.pr-charts { display: grid; grid-template-columns: 1fr 1fr; gap: 8px; }
+.pr-charts figure.chart { box-shadow: none; padding: 6px; }
+.parent-page h3 { font-size: 13.5px; margin: 0 0 4px; }
+.parent-page h3 small { font-weight: 400; color: var(--color-muted); font-size: 11px; }
+.pr-table table.data { font-size: 11.5px; margin: 0; }
+.pr-table table.data th, .pr-table table.data td { padding: 2px 6px; }
+.pr-table tr.pr-avg th, .pr-table tr.pr-avg td { font-weight: 700; background: var(--color-surface); }
+.pr-table td.up { color: var(--color-up); font-weight: 600; }
+.pr-table td.down { color: var(--color-down); font-weight: 600; }
+.pr-notes { background: var(--color-surface); border-radius: 10px; padding: 6px 12px; }
+.pr-notes ul { margin: 0; padding-left: 18px; font-size: 12px; line-height: 1.45; }
+.pr-notes li { margin: 1px 0; }
+.pr-comment .pr-lines { border: 1px solid var(--color-line); border-radius: 10px; padding: 2px 12px 8px; }
+.pr-comment .pr-lines span { display: block; height: 18px; border-bottom: 1px dashed var(--color-line); }
+.pr-foot { font-size: 9px; line-height: 1.4; color: var(--color-muted); border-top: 1px solid var(--color-line); padding-top: 3px; }
+.pr-foot p { margin: 1px 0; }
+
+@media screen and (max-width: 720px) {
+  .kpis, .pr-kpis { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+  .charts, .pr-charts { grid-template-columns: 1fr; }
+}
+
+@page { size: A4; margin: 15mm; }
+@media print {
+  .report-doc { max-width: none; padding: 0; }
+  .report .page { break-after: page; border: 0; margin: 0; padding: 0; }
+  .report .page:last-child { break-after: auto; }
+  .card, .kpi, figure.chart { box-shadow: none; }
+  .charts { grid-template-columns: 1fr 1fr; gap: 6px; }
+  figure.chart { padding: 2px; }
+  .data-table { display: none; }
+  .kpis { grid-template-columns: repeat(4, minmax(0, 1fr)); }
+  table.data { font-size: 9.5px; }
+  table.data tr, .kpi, .interpret li { break-inside: avoid; }
+  button.link { color: inherit; text-decoration: none; }
+  /* 학부모용 리포트는 정확히 A4 한 장: 인쇄 영역(297 − 30mm) 안에 고정 */
+  .report .parent-page { height: 266mm; max-width: none; overflow: hidden; border: 0; border-radius: 0; padding: 0; gap: 2.2mm; }
+  .parent-page .pr-comment { margin-top: auto; }
+  .pr-table table.data { font-size: 10.5px; }
+  * { -webkit-print-color-adjust: exact; print-color-adjust: exact; }
+}

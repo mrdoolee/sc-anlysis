@@ -1,0 +1,28 @@
+{
+  "name": "score-trend-app",
+  "version": "1.0.0",
+  "description": "중학교 성적 추세 분석 로컬 웹앱",
+  "scripts": {
+    "dev": "vite",
+    "build": "vite build && node scripts/inline-build.mjs",
+    "test": "vitest run",
+    "typecheck": "tsc --noEmit",
+    "privacy": "node scripts/privacy-check.mjs",
+    "e2e": "node e2e/e2e.mjs",
+    "fake-data": "node scripts/make-fake-data.mjs",
+    "verify": "npm run typecheck && npm test && npm run build && npm run privacy && npm run e2e"
+  },
+  "license": "ISC",
+  "type": "module",
+  "dependencies": {
+    "fflate": "^0.8.3"
+  },
+  "devDependencies": {
+    "playwright-core": "^1.64.1",
+    "pretendard": "^1.3.9",
+    "typescript": "^7.0.2",
+    "vite": "^8.3.5",
+    "vitest": "^5.1.0"
+  },
+  "private": true
+}

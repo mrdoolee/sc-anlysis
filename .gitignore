@@ -1,0 +1,7 @@
+node_modules/
+dist/
+sample_data/
+*.xlsx
+!tests/**/*.xlsx
+.e2e-out/
+coverage/
