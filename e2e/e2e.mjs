@@ -41,6 +41,20 @@ const url = pathToFileURL(distHtml).href;
 await page.goto(url);
 check('file://로 앱 로드', (await page.locator('h1').textContent()) === '너의 점수는' && (await page.title()) === '너의 점수는: 중학교 성적 분석 도구(학급 담임용)');
 check('불러오기: 나이스 다운로드 경로 안내', (await page.locator('.path').count()) === 2 && (await page.locator('.steps-help').textContent()).includes('학급별일람표조회-전체교과목'));
+check('지원 형식: 괄호 설명 없음', !/(가로형)|(세로형)/.test(await page.locator('.steps-help').textContent()));
+
+// 사이드바 최상단 개인정보보호 박스 → 안내 모달
+const firstBlock = await page.evaluate(() => {
+  const side = document.querySelector('.sidebar');
+  const card = document.querySelector('.privacy-card');
+  const nav = document.getElementById('nav');
+  return !!card && side.contains(card) && !!(card.compareDocumentPosition(nav) & Node.DOCUMENT_POSITION_FOLLOWING);
+});
+check('개인정보 박스가 메뉴 위', firstBlock);
+await page.click('#privacy-btn');
+check('개인정보보호 안내 모달', (await page.locator('#privacy-modal[role="dialog"]').count()) === 1 && (await page.locator('#privacy-modal .privacy-box li').count()) >= 3 && (await page.locator('#privacy-ok').textContent()) === '확인 및 닫기');
+await page.click('#privacy-ok');
+check('확인 및 닫기', (await page.locator('#modal-root .modal').count()) === 0);
 
 // 0. 사용 설명서·제작자 모달(표시 전용, 상태 불변)
 await page.click('#manual-btn');
@@ -156,6 +170,23 @@ check('학급 개관: 차트 기본 접힘', (await page.locator('#result-body .
 await page.click('#charts-expand');
 check('학급 개관 차트 펼침', (await svgCount()) >= 6);
 await page.screenshot({ path: join(out, '04-class.png'), fullPage: true });
+// 학생별 표 정렬
+const colVals = async (col) => {
+  const idx = await page.evaluate((c) => [...document.querySelectorAll('#class-table thead th')].findIndex((th) => th.querySelector(`[data-col="${c}"]`)), col);
+  return page.evaluate((i) => [...document.querySelectorAll('#class-table tbody tr')].map((tr) => tr.children[i].textContent.trim()), idx);
+};
+const num = (t) => (t === '–' ? null : Number(t.replace('−', '-').replace('+', '')));
+await page.click('#class-table [data-col="delta"]');
+let ds = (await colVals('delta')).map(num);
+const nonNull = (xs) => xs.filter((x) => x !== null);
+const isSorted = (xs, dir) => xs.every((x, i) => i === 0 || (dir === 'desc' ? xs[i - 1] >= x : xs[i - 1] <= x));
+check('학생별 표: Δ 내림차순 정렬', isSorted(nonNull(ds), 'desc') && (await page.getAttribute('#class-table th:has([data-col="delta"])', 'aria-sort')) === 'descending');
+await page.click('#class-table [data-col="delta"]');
+ds = (await colVals('delta')).map(num);
+check('학생별 표: 다시 누르면 오름차순', isSorted(nonNull(ds), 'asc'));
+await page.click('#class-table [data-col="name"]');
+const names = await colVals('name');
+check('학생별 표: 학생(번호순) 정렬', names[0] === '학생01' && names[1] === '학생02');
 await page.locator('#result-body circle.pt, #result-body path.pt').first().click();
 check('산점도 점 클릭 → 학생 상세', await page.locator('#tab-student.active').count() === 1);
 await page.selectOption('#c-metric', 'z');
@@ -163,9 +194,7 @@ check('z 기준 전환', (await page.locator('#result-body').textContent()).incl
 await page.click('label:has(#u-group)');
 check('교과군 단위 전환', (await page.locator('#c-focus option').allTextContents()).includes('사회'));
 await page.click('#tab-alerts');
-await page.click('#tab-gap');
-check('학기 성적↔고사 격차', (await page.locator('#result-body table').count()) > 0);
-await page.screenshot({ path: join(out, '05-gap.png'), fullPage: true });
+check('학기 성적↔고사 탭 없음', (await page.locator('#tab-gap').count()) === 0 && !(await page.locator('.segmented').textContent()).includes('고사'));
 await page.click('label:has(#u-subject)');
 await page.selectOption('#c-metric', 'raw');
 

@@ -7,11 +7,11 @@ import type { ParsedFile, TpKind } from '../core/types.ts';
 import { readXlsx } from '../core/xlsx.ts';
 import { esc } from '../charts/svg.ts';
 import { buildReportBody, exportHtmlDocument, type ExportScope } from '../report/report.ts';
-import { openCredit, openManual, openModal, installModalHandlers } from './modal.ts';
-import { PRIVACY_NOTE, alertsSection, anonymizer, classSections, footnotes, gapSection, parentReport, studentSections, type ViewCtx } from '../views/sections.ts';
+import { openCredit, openManual, openModal, openPrivacy, installModalHandlers } from './modal.ts';
+import { PRIVACY_NOTE, alertsSection, anonymizer, classSections, footnotes, parentReport, studentSections, type ViewCtx } from '../views/sections.ts';
 
 type View = 'load' | 'check' | 'analyze' | 'export' | 'settings';
-type Tab = 'student' | 'class' | 'alerts' | 'gap';
+type Tab = 'student' | 'class' | 'alerts';
 
 interface State {
   files: ParsedFile[];
@@ -34,6 +34,8 @@ interface State {
   includeComment: boolean;
   /** 학생별 선생님 의견(메모리에만 보관) */
   comments: Record<string, string>;
+  /** 학급 개관 학생별 표 정렬 */
+  classSort: { col: string; dir: 'asc' | 'desc' };
   gradeSigma: Record<string, number>;
   ds: Dataset | null;
   view: View;
@@ -55,7 +57,7 @@ interface State {
 }
 
 const initial = (): State => ({
-  files: [], loadErrors: [], settings: loadSettings(), merges: {}, tpOrder: [], tpOverrides: {}, excludedTps: [], openTps: [], expandedCharts: [], showRank: false, subjectsOpen: false, includeComment: true, comments: {}, gradeSigma: {}, ds: null,
+  files: [], loadErrors: [], settings: loadSettings(), merges: {}, tpOrder: [], tpOverrides: {}, excludedTps: [], openTps: [], expandedCharts: [], showRank: false, subjectsOpen: false, includeComment: true, comments: {}, classSort: { col: 'name', dir: 'asc' }, gradeSigma: {}, ds: null,
   view: 'load', tab: 'student', preset: 'S3', grade: null, a: null, b: null, tpIds: [], unit: 'subject', metric: 'raw', focus: AVG,
   student: null, hidden: [], exportScope: 'student', exportSelected: [], anonymize: false, message: '',
 });
@@ -98,7 +100,7 @@ function ctx(interactive: boolean, anonymize = false): ViewCtx | null {
   const m = matrix();
   if (!m || !state.ds) return null;
   const focus = m.items.some((i) => i.id === state.focus) ? state.focus : AVG;
-  return { ds: state.ds, m, settings: state.settings, metric: state.metric, focus, hidden: new Set(state.hidden), interactive, anonymize, nameOf: anonymizer(state.ds, anonymize), expanded: new Set(state.expandedCharts), showRank: state.showRank };
+  return { ds: state.ds, m, settings: state.settings, metric: state.metric, focus, hidden: new Set(state.hidden), interactive, anonymize, nameOf: anonymizer(state.ds, anonymize), expanded: new Set(state.expandedCharts), showRank: state.showRank, sort: state.classSort };
 }
 
 // ---------- 화면 ----------
@@ -162,9 +164,9 @@ function viewLoad(): string {
   <section class="card steps-help">
     <h2>지원 형식</h2>
     <ol>
-      <li><strong>고사 일람표</strong>(가로형): 학급별 회차 시험 점수. 제목의 학년·학기·회차를 자동으로 읽습니다.
+      <li><strong>고사 일람표</strong>: 학급별 회차 시험 점수. 제목의 학년·학기·회차를 자동으로 읽습니다.
         <p class="path"><span class="path-label">다운로드</span><span>[나이스]</span>›<span>[학급담임]</span>›<span>[정기시험조회/통계]</span>›<span>[정기시험조회]</span>›<span>[학급별일람표조회-전체교과목]</span>›<span>[저장] 버튼, XLS data</span></p></li>
-      <li><strong>교과학습발달상황</strong>(세로형): 학기 성적. 학년·학기별로 나눠 읽습니다.
+      <li><strong>교과학습발달상황</strong>: 학기 성적. 학년·학기별로 나눠 읽습니다.
         <p class="path"><span class="path-label">다운로드</span><span>[나이스]</span>›<span>[학급담임]</span>›<span>[학교생활기록부]</span>›<span>[학생부 항목별 조회]</span>›<span>[교과학습발달상황-교과학습발달상황]</span>›<span>[저장] 버튼, XLS data</span></p></li>
       <li>학년은 정해져 있지 않습니다. 1~3학년 어떤 조합이든 됩니다. 필요 없는 학년·학기는 '데이터 확인'에서 제외할 수 있습니다.</li>
     </ol>
@@ -295,14 +297,12 @@ function viewAnalyze(): string {
     ['student', '학생 개인'],
     ['class', '학급 개관'],
     ['alerts', '주의 학생'],
-    ['gap', '학기 성적↔고사'],
   ];
   let body = '';
   if (!state.tpIds.length) body = '<p class="alert">분석할 시점을 하나 이상 선택하세요.</p>';
   else if (state.tab === 'student') body = state.student ? studentSections(c, state.student) + footnotes(c) : '<p>학생을 선택하세요.</p>';
   else if (state.tab === 'class') body = classSections(c) + footnotes(c);
-  else if (state.tab === 'alerts') body = alertsSection(c);
-  else body = gapSection(c);
+  else body = alertsSection(c);
   return `${filters(c.m)}
   <div class="dash-toolbar"><div class="segmented" role="tablist">${tabs.map(([t, l]) => `<button type="button" role="tab" id="tab-${t}" class="tab${state.tab === t ? ' active' : ''}" aria-selected="${state.tab === t}" data-action="tab" data-tab="${t}">${l}</button>`).join('')}</div><span class="actions"><button type="button" class="button-ghost" id="charts-collapse" data-action="charts-all" data-mode="collapse">차트 모두 접기</button><button type="button" class="button-ghost" id="charts-expand" data-action="charts-all" data-mode="expand">차트 모두 펼치기</button></span></div>
   <div class="report dash-body" id="result-body">${body}</div>`;
@@ -545,6 +545,12 @@ function onAction(el: HTMLElement): void {
       if (src) openModal(esc(title), `<div class="zoom-body">${src.innerHTML}</div>`, { wide: true, id: 'zoom-modal' });
       return;
     }
+    case 'class-sort': {
+      const col = d.col!;
+      // 같은 열은 방향 전환, 새 열은 이름은 오름차순·점수는 내림차순부터
+      state.classSort = state.classSort.col === col ? { col, dir: state.classSort.dir === 'asc' ? 'desc' : 'asc' } : { col, dir: col === 'name' ? 'asc' : 'desc' };
+      break;
+    }
     case 'rank-toggle':
       state.showRank = !state.showRank;
       break;
@@ -758,6 +764,7 @@ export function start(): void {
   });
   installModalHandlers();
   $('#manual-btn')?.addEventListener('click', openManual);
+  $('#privacy-btn')?.addEventListener('click', openPrivacy);
   $('#credit-link')?.addEventListener('click', openCredit);
   // 선생님 의견: 입력할 때마다 미리보기만 갱신(입력 칸 포커스 유지)
   document.addEventListener('input', (e) => {

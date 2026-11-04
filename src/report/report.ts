@@ -1,7 +1,7 @@
 // 리포트 본문과 자체 포함 HTML 문서 생성. 스크립트·외부 참조 없음.
 import reportCss from './report.css?raw';
 import { esc } from '../charts/svg.ts';
-import { PRIVACY_NOTE, alertsSection, classSections, footnotes, gapSection, type ViewCtx } from '../views/sections.ts';
+import { PRIVACY_NOTE, alertsSection, classSections, footnotes, type ViewCtx } from '../views/sections.ts';
 import { parentReport } from '../views/sections.ts';
 
 export type ExportScope = 'student' | 'selected' | 'all' | 'class';
@@ -26,7 +26,7 @@ export function buildReportBody(ctx: ViewCtx, o: ReportOptions): string {
   const pages: string[] = [];
   const withClass = o.scope === 'class' || o.scope === 'all';
   if (withClass) {
-    pages.push(`<section class="page">${pageHeader(ctx, o, '학급 성적 추세 리포트')}${classSections(ctx)}${alertsSection(ctx)}${gapSection(ctx)}${footnotes(ctx)}${privacy}</section>`);
+    pages.push(`<section class="page">${pageHeader(ctx, o, '학급 성적 추세 리포트')}${classSections(ctx)}${alertsSection(ctx)}${footnotes(ctx)}${privacy}</section>`);
   }
   if (o.scope !== 'class')
     for (const s of o.students) pages.push(`<section class="page parent-page">${parentReport(ctx, s, o.generatedAt, { comment: o.commentFor ? o.commentFor(s) : undefined })}</section>`);

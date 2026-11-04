@@ -21,6 +21,8 @@ export interface ViewCtx {
   expanded?: Set<string>;
   /** 대시보드에서 석차·백분위를 보일지(기본 숨김, 상담 중 노출 방지) */
   showRank?: boolean;
+  /** 학급 개관 학생별 표 정렬 */
+  sort?: { col: string; dir: 'asc' | 'desc' };
 }
 
 export const tpLabelOf = (ds: Dataset) => (id: string) => ds.timepoints.find((t) => t.id === id)?.label ?? id;
@@ -207,7 +209,6 @@ export function studentSections(ctx: ViewCtx, stu: string): string {
   ]);
   html += `<section><h3>과목별 상세</h3>${table(['과목', ...xLabels.map(esc)], rows, 'data detail')}</section>`;
 
-  if (semesterGap(ds).length) html += gapSection(ctx, stu);
   return html;
 }
 
@@ -258,19 +259,46 @@ export function classSections(ctx: ViewCtx): string {
   }
   html += `</div>`;
 
-  const rows = m.students.map((s) => {
+  // 학생별 표: 머리글을 눌러 정렬(대시보드). 결측은 항상 맨 아래.
+  const d = metric === 'raw' || metric === 't' ? 1 : 2;
+  const last = m.tpIds.at(-1);
+  const TREND_RANK: Record<string, number> = { 상승: 3, 유지: 2, 하락: 1, '판단 불가': 0 };
+  const recs = m.students.map((s, idx) => {
     const t = studentTrend(m, focus.id, s, metric, settings);
-    const last = m.tpIds.at(-1);
-    return [
+    const pr = last ? (m.cell(focus.id, last, s)?.pr ?? null) : null;
+    const keys: Record<string, number | null> = { name: idx, delta: t.delta, dz: t.deltaZ, trend: t.label === '판단 불가' ? null : TREND_RANK[t.label] * 100 + (t.deltaZ ?? 0), pr };
+    m.tpIds.forEach((tp, i) => (keys[`tp:${tp}`] = t.values[i]));
+    const cells = [
       studentLink(ctx, s),
-      ...t.values.map((x) => fmt(x, metric === 'raw' || metric === 't' ? 1 : 2)),
-      fmtSigned(t.delta, metric === 'raw' || metric === 't' ? 1 : 2),
+      ...t.values.map((x) => fmt(x, d)),
+      fmtSigned(t.delta, d),
       fmtSigned(t.deltaZ, 2),
       `<span class="trend trend-${t.label === '상승' ? 'up' : t.label === '하락' ? 'down' : 'flat'}">${t.label}</span>`,
-      last ? fmt(m.cell(focus.id, last, s)?.pr, 0) : '–',
+      fmt(pr, 0),
     ];
+    return { keys, cells };
   });
-  html += `<section><h3>학생별 ${esc(focus.label)} (${esc(METRIC_LABEL[metric])})</h3>${table(['학생', ...xLabels.map(esc), 'Δ', 'Δz', '추세', '최근 백분위'], rows)}</section>`;
+  const sort = ctx.sort ?? { col: 'name', dir: 'asc' as const };
+  const sign = sort.dir === 'asc' ? 1 : -1;
+  recs.sort((a, b) => {
+    const x = a.keys[sort.col] ?? null;
+    const y = b.keys[sort.col] ?? null;
+    if (x === null && y === null) return (a.keys.name as number) - (b.keys.name as number);
+    if (x === null) return 1;
+    if (y === null) return -1;
+    return (x - y) * sign || (a.keys.name as number) - (b.keys.name as number);
+  });
+  const cols: [string, string][] = [['name', '학생'], ...m.tpIds.map((tp, i): [string, string] => [`tp:${tp}`, esc(xLabels[i])]), ['delta', 'Δ'], ['dz', 'Δz'], ['trend', '추세'], ['pr', '최근 백분위']];
+  const head = cols
+    .map(([key, label], i) => {
+      if (!ctx.interactive) return `<th scope="col">${label}</th>`;
+      const on = sort.col === key;
+      const aria = on ? (sort.dir === 'asc' ? 'ascending' : 'descending') : 'none';
+      return `<th scope="col" aria-sort="${aria}"><button type="button" class="sort-btn${on ? ' on' : ''}" id="sort-${i}" data-action="class-sort" data-col="${esc(key)}">${label}<span class="sort-ind" aria-hidden="true">${on ? (sort.dir === 'asc' ? '▲' : '▼') : '↕'}</span></button></th>`;
+    })
+    .join('');
+  const body = recs.map((r) => `<tr>${r.cells.map((c, i) => (i === 0 ? `<th scope="row">${c}</th>` : `<td>${c}</td>`)).join('')}</tr>`).join('');
+  html += `<section><h3>학생별 ${esc(focus.label)} (${esc(METRIC_LABEL[metric])})${ctx.interactive ? ' <span class="meta">머리글을 누르면 정렬됩니다</span>' : ''}</h3><div class="scroll"><table class="data sortable" id="class-table"><thead><tr>${head}</tr></thead><tbody>${body}</tbody></table></div></section>`;
   return html;
 }
 

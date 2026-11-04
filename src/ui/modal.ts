@@ -5,13 +5,13 @@ let lastFocus: HTMLElement | null = null;
 
 const root = () => document.getElementById('modal-root')!;
 
-export function openModal(title: string, body: string, opts: { wide?: boolean; id?: string } = {}): void {
+export function openModal(title: string, body: string, opts: { wide?: boolean; id?: string; subtitle?: string; icon?: string; footer?: string } = {}): void {
   lastFocus = document.activeElement as HTMLElement | null;
   root().innerHTML = `<div class="modal-backdrop" data-modal-backdrop>
     <div class="modal${opts.wide ? ' wide' : ''}" role="dialog" aria-modal="true" aria-labelledby="modal-title"${opts.id ? ` id="${opts.id}"` : ''}>
       <button type="button" class="modal-close" aria-label="닫기" data-modal-close>✕</button>
-      <h2 id="modal-title">${title}</h2>
-      <div class="modal-body">${body}</div>
+      <div class="modal-head">${opts.icon ? `<span class="modal-icon" aria-hidden="true">${opts.icon}</span>` : ''}<div><h2 id="modal-title">${title}</h2>${opts.subtitle ? `<p class="modal-sub">${opts.subtitle}</p>` : ''}</div></div>
+      <div class="modal-body">${body}</div>${opts.footer ? `<div class="modal-foot">${opts.footer}</div>` : ''}
     </div>
   </div>`;
   document.body.classList.add('modal-open');
@@ -115,7 +115,7 @@ export function openManual(): void {
           <li>시점 버튼을 눌러 비교할 시험을 고르고, 학생·점수 기준(원점수/z/T)·단위(과목/교과군)를 정합니다.</li>
           <li>'과목별 추이'와 '표준화 추이' 그래프는 늘 보이며, 누르면 크게 볼 수 있습니다. 나머지 차트는 접혀 있으니 필요할 때 펼치세요.</li>
           <li><strong>학급 석차</strong>는 '석차 보기'를 눌러야 보입니다. 학생을 바꾸면 다시 가려집니다(상담 중 노출 방지).</li>
-          <li>학급 개관·주의 학생·학기 성적↔고사 탭은 교사용입니다.</li>
+          <li>학급 개관·주의 학생 탭은 교사용입니다. 학급 개관의 학생별 표는 머리글을 눌러 정렬합니다.</li>
         </ul>
       </section>
       <section class="card">
@@ -135,5 +135,31 @@ export function openManual(): void {
       </section>
     </div>`,
     { wide: true, id: 'manual-modal' },
+  );
+}
+
+export const SHIELD_ICON =
+  '<svg viewBox="0 0 24 24" width="20" height="20"><path d="M12 3l7 3v5c0 4.5-3 8.3-7 10-4-1.7-7-5.5-7-10V6z" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linejoin="round"/><path d="M8.8 12.2l2.2 2.2 4.2-4.4" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round"/></svg>';
+
+/** 개인정보보호 동작 원리 안내 */
+export function openPrivacy(): void {
+  openModal(
+    '개인정보보호 동작 원리',
+    `<section class="privacy-box">
+      <h3>${SHIELD_ICON}개인정보 외부 유출 ZERO (안전한 로컬 전용 처리)</h3>
+      <ul>
+        <li><strong>Local In-Memory Processing:</strong> 선생님께서 불러오신 나이스 성적 파일(xlsx)과 학생 이름·학번·점수, 선생님 의견은 오직 이 컴퓨터 브라우저의 메모리(RAM) 안에서만 분석됩니다. 새로고침하거나 창을 닫으면 모두 사라집니다.</li>
+        <li><strong>No Network · No Server:</strong> 인터넷 연결 없이 동작합니다. 보안 정책(CSP)으로 외부 서버 연결 자체를 막아 두었으며, 외부 데이터베이스·AI·통계 수집 도구를 쓰지 않습니다. 글꼴도 앱 안에 들어 있습니다.</li>
+        <li><strong>No Storage:</strong> 성적과 이름은 브라우저 저장소(쿠키·로컬 저장소 등)에 남기지 않습니다. 저장되는 것은 기준값·과목 묶음 같은 설정뿐입니다.</li>
+        <li><strong>100% Client-Side Output:</strong> 그래프, HTML 리포트, PDF 인쇄까지 모든 결과가 외부 서버를 거치지 않고 이 컴퓨터 안에서 만들어집니다.</li>
+      </ul>
+    </section>
+    <p class="privacy-warn">내보낸 HTML·PDF 파일에는 학생 개인정보가 들어 있습니다. 보관과 전달에 유의하고, 필요하면 내보내기에서 '익명화'를 켜 주세요.</p>`,
+    {
+      id: 'privacy-modal',
+      icon: SHIELD_ICON,
+      subtitle: '학생 개인정보가 외부로 유출되지 않는 이유',
+      footer: '<button type="button" class="button-primary" data-modal-close id="privacy-ok">확인 및 닫기</button>',
+    },
   );
 }
