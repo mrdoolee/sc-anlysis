@@ -52,9 +52,26 @@ await page.screenshot({ path: join(out, '01-load.png'), fullPage: true });
 
 // 2. 데이터 확인
 await page.click('#nav-check');
-const tpRows = await page.locator('#tp-table tbody tr').count();
+const tpRows = await page.locator('#tp-list .tp-item').count();
 check('시점 5개 인식(P만 있는 학기 제외)', tpRows === 5, `${tpRows}개`);
 check('결측 학생 표시', (await page.locator('.miss').count()) > 0);
+// 원하지 않는 시점 제외 → 다시 포함
+// 한 줄 상자 펼치기/접기
+await page.click('#tpo-0');
+check('시점 펼치기 → 편집 칸 표시', (await page.locator('#tpe-0 input[data-change="tp-label"]').count()) === 1 && (await page.getAttribute('#tpo-0', 'aria-expanded')) === 'true');
+await page.fill('#tpl-0', '작년 1학기');
+await page.press('#tpl-0', 'Tab');
+check('펼친 상자에서 이름 수정', (await page.locator('#tpo-0 strong').textContent()) === '작년 1학기');
+await page.click('#tpo-0');
+check('시점 접기', (await page.locator('#tpe-0').count()) === 0);
+await page.click('[data-action="tp-reset"]');
+const semRow = page.locator('.tp-item', { hasText: '2학년 1학기 성적' });
+await semRow.locator('[data-action="tp-exclude"]').click();
+const afterEx = await page.locator('#tp-list .tp-item').count();
+const exList = await page.locator('.excluded li').allTextContents();
+check('시점 제외(2학년 1학기 성적)', afterEx === 4 && exList.length === 1 && exList[0].includes('2학년 1학기 성적'), `${afterEx}개 남음`);
+await page.click('#tpin-0');
+check('제외한 시점 다시 포함', (await page.locator('#tp-list .tp-item').count()) === 5 && (await page.locator('.excluded').count()) === 0);
 const sugg = page.locator('[data-action="apply-alias"]');
 check('사회→역사 별칭 제안', (await sugg.count()) > 0);
 await sugg.first().click();
@@ -69,6 +86,18 @@ for (const p of ['S1', 'S2', 'S3']) {
   check(`${p} 학생 화면 차트 표시`, n >= 6, `차트 ${n}개, 시점 ${sel}개`);
   await page.screenshot({ path: join(out, `03-${p}-student.png`), fullPage: true });
 }
+// 차트 박스: 한 줄 머리글 + 접기/펼치기, 학생을 바꿔도 접힘 유지
+const svgCount = () => page.locator('#result-body .chart-svg').count();
+const before = await svgCount();
+await page.click('#cb-stu-lines');
+const afterOne = await svgCount();
+await page.selectOption('#c-student', { index: 1 });
+check('차트 하나 접기(학생 바꿔도 유지)', afterOne === before - 1 && (await svgCount()) === before - 1 && (await page.getAttribute('#cb-stu-lines', 'aria-expanded')) === 'false', `${before} → ${afterOne}`);
+await page.click('#charts-collapse');
+check('차트 모두 접기', (await svgCount()) === 0 && (await page.locator('#result-body .chart-box').count()) >= 7);
+await page.click('#charts-expand');
+check('차트 모두 펼치기', (await svgCount()) === before);
+await page.selectOption('#c-student', { index: 0 });
 await page.click('#tab-class');
 check('학급 개관 차트', (await page.locator('#result-body svg').count()) >= 6);
 await page.screenshot({ path: join(out, '04-class.png'), fullPage: true });

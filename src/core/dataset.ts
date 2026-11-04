@@ -1,5 +1,5 @@
 // 여러 파일의 파싱 결과를 하나의 정규화 데이터셋(학생 × 시점 × 과목)으로 합친다.
-import type { Issue, ParsedFile, TpKind } from './types.ts';
+import type { Issue, ParsedFile, RawTimepoint, TpKind } from './types.ts';
 
 export interface Timepoint {
   id: string;
@@ -51,6 +51,14 @@ export interface DatasetOptions {
   merges: Record<string, string>;
   tpOrder?: string[];
   tpOverrides?: Record<string, TpOverride>;
+  /** 분석에서 뺄 시점 id(예: 원하지 않는 학년의 학기 성적) */
+  exclude?: string[];
+}
+
+export interface ExcludedTimepoint {
+  id: string;
+  label: string;
+  fileName: string;
 }
 
 export interface Dataset {
@@ -62,6 +70,8 @@ export interface Dataset {
   issues: Issue[];
   notices: Issue[];
   classLabel: string | null;
+  /** 사용자가 제외한 시점(다시 포함할 수 있도록 보관) */
+  excluded: ExcludedTimepoint[];
 }
 
 export const KIND_LABEL: Record<TpKind, string> = { exam: '고사', semester: '학기 성적' };
@@ -74,15 +84,21 @@ export function defaultLabel(t: Pick<Timepoint, 'kind' | 'grade' | 'semester' | 
 
 const nameKey = (name: string) => name.replace(/\s+/g, '');
 
+/** 시점 id는 파일의 원래 메타로 만들어 사용자 수정(override)·제외 설정이 다시 빌드해도 유지되게 한다. */
+export const timepointId = (fileName: string, raw: RawTimepoint) => `${fileName}#${raw.kind}-${raw.grade ?? 'x'}-${raw.semester ?? 'x'}-${raw.round ?? 'x'}`;
+
 export function buildDataset(files: ParsedFile[], opts: DatasetOptions): Dataset {
   const issues: Issue[] = [];
   const notices: Issue[] = [];
   const alias = (s: string) => opts.aliases[s] || s;
+  const excludedIds = new Set(opts.exclude ?? []);
+  const excluded: ExcludedTimepoint[] = [];
 
   // 한 시점 안에서 이름이 겹치는 학생은 모든 파일에서 '이름#번호'로 구분한다.
   const dupNames = new Set<string>();
   for (const f of files)
     for (const tp of f.timepoints) {
+      if (excludedIds.has(timepointId(f.fileName, tp))) continue;
       const seen = new Map<string, Set<number | null>>();
       for (const r of tp.records) {
         const k = nameKey(r.name);
@@ -107,7 +123,7 @@ export function buildDataset(files: ParsedFile[], opts: DatasetOptions): Dataset
     for (const n of f.notices) notices.push({ fileName: f.fileName, message: n });
     issues.push(...f.integrity);
     for (const raw of f.timepoints) {
-      const id = `${f.fileName}#${raw.kind}-${raw.grade ?? 'x'}-${raw.semester ?? 'x'}-${raw.round ?? 'x'}`;
+      const id = timepointId(f.fileName, raw);
       const ov = opts.tpOverrides?.[id] ?? {};
       const meta = {
         kind: ov.kind ?? raw.kind,
@@ -115,6 +131,10 @@ export function buildDataset(files: ParsedFile[], opts: DatasetOptions): Dataset
         semester: ov.semester !== undefined ? ov.semester : raw.semester,
         round: ov.round !== undefined ? ov.round : raw.round,
       };
+      if (excludedIds.has(id)) {
+        excluded.push({ id, label: ov.label || defaultLabel(meta), fileName: f.fileName });
+        continue;
+      }
       const subjects = [...new Set(raw.subjects.map(alias))];
       const tp: Timepoint = { id, ...meta, year: raw.year, label: ov.label || defaultLabel(meta), fileName: f.fileName, subjects, classLabel: raw.classLabel };
       if (raw.kind === 'exam' && raw.classLabel) classLabel = raw.classLabel;
@@ -169,7 +189,7 @@ export function buildDataset(files: ParsedFile[], opts: DatasetOptions): Dataset
 
   const list = [...students.values()].sort((a, b) => (a.nos[0] ?? 1e9) - (b.nos[0] ?? 1e9) || a.name.localeCompare(b.name, 'ko'));
   for (const s of list) if (s.nos.length > 1) issues.push({ fileName: '-', message: `${s.name}: 파일마다 번호가 다릅니다(${s.nos.join(', ')}). 동일 학생이 맞는지 확인하세요.` });
-  return { timepoints, students: list, scores, byTp, issues, notices, classLabel };
+  return { timepoints, students: list, scores, byTp, issues, notices, classLabel, excluded };
 }
 
 export interface AliasSuggestion {

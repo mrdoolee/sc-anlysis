@@ -131,6 +131,29 @@ input:focus, select:focus, textarea:focus { border-color: var(--color-primary); 
 input.num { width: 80px; }
 textarea { width: 100%; max-width: 560px; }
 .suggest { padding-left: 18px; }
+/* 시점 목록: 한 줄 상자 + 펼치기 */
+.tp-list { list-style: none; margin: 8px 0 0; padding: 0; display: flex; flex-direction: column; gap: 8px; }
+.tp-item { background: var(--color-bg); border: 1px solid var(--color-line); border-radius: 12px; }
+.tp-item.open { border-color: var(--color-primary); box-shadow: 0 4px 14px rgba(29, 78, 216, 0.08); }
+.tp-line { display: flex; align-items: center; gap: 10px; padding: 6px 10px; min-height: 48px; }
+.tp-no { flex: none; display: grid; place-items: center; width: 26px; height: 26px; border-radius: 50%; background: var(--color-surface); color: var(--color-primary); font-weight: 700; font-size: 12.5px; }
+.tp-toggle { flex: 1; min-width: 0; display: flex; align-items: center; gap: 10px; border: 0; background: none; padding: 4px 2px; text-align: left; }
+.tp-toggle strong { font-size: 15px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.tp-meta { color: var(--color-muted); font-size: 12.5px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; min-width: 0; }
+.chev { margin-left: auto; flex: none; font-size: 12px; font-weight: 600; color: var(--color-primary); }
+.kind-badge { flex: none; font-size: 11.5px; font-weight: 700; border-radius: 999px; padding: 2px 9px; }
+.kind-badge.exam { background: #dbeafe; color: var(--color-primary); }
+.kind-badge.semester { background: #e0f2fe; color: #0369a1; }
+.tp-actions { flex: none; display: flex; gap: 4px; }
+.tp-actions .small { min-width: 30px; height: 30px; }
+.tp-edit { display: grid; grid-template-columns: minmax(180px, 2fr) minmax(120px, 1fr) repeat(3, 90px); gap: 10px 14px; padding: 12px 14px 14px 46px; border-top: 1px dashed var(--color-line); }
+.tp-edit .num { width: 100%; }
+.tp-subjects { grid-column: 1 / -1; font-size: 13px; }
+@media (max-width: 900px) { .tp-edit { grid-template-columns: 1fr 1fr; padding-left: 14px; } .tp-meta { display: none; } }
+.excluded { margin-top: 10px; padding: 8px 12px; border: 1px dashed var(--color-line); border-radius: 12px; background: var(--color-bg); }
+.excluded ul { list-style: none; margin: 6px 0 0; padding: 0; display: flex; flex-direction: column; gap: 6px; }
+.excluded li { display: flex; align-items: center; justify-content: space-between; gap: 8px; color: var(--color-muted); }
+.excluded li > span:first-child { text-decoration: line-through; text-decoration-color: rgba(74, 91, 120, 0.5); }
 .suggest li { margin: 4px 0; }
 .form-grid { display: grid; grid-template-columns: max-content 110px; gap: 8px 14px; align-items: center; }
 
@@ -165,6 +188,19 @@ details.more[open] summary { margin-bottom: 8px; }
 .dash-body .interpret, .dash-body section { border: 1px solid var(--color-line); border-radius: var(--radius-card); padding: var(--space-unit); }
 .dash-body .interpret h3, .dash-body section > h3 { margin-top: 0; }
 .dash-body .kpis, .dash-body .charts { margin: 0; }
+/* 대시보드 차트: 한 줄에 하나, 머리글 한 줄 + 접기/펼치기 */
+.dash-toolbar { display: flex; justify-content: space-between; align-items: center; gap: 8px; flex-wrap: wrap; }
+.dash-body .charts { grid-template-columns: 1fr; gap: 12px; }
+.chart-box { background: var(--color-surface); border-radius: var(--radius-card); box-shadow: var(--shadow-card); overflow: hidden; }
+.chart-head { display: flex; align-items: center; justify-content: space-between; gap: 12px; min-height: 52px; padding: 8px 12px 8px calc(var(--space-unit) * 1.25); }
+.chart-head h3 { margin: 0; font-size: 16px; }
+.chart-box.collapsed .chart-head { min-height: 48px; }
+.chart-toggle { flex: none; min-width: 84px; height: 32px; font-weight: 600; color: var(--color-primary); }
+.chart-body { padding: 0 calc(var(--space-unit) * 1.25) var(--space-unit); }
+.chart-body .chart-svg { max-width: 980px; margin: 0 auto; background: var(--color-bg); border-radius: 10px; }
+.chart-body .chart-svg.compact { max-width: 560px; }
+/* 차트 안 제목은 머리글과 겹치므로 숨김 */
+.chart-box .chart-svg > text:first-of-type { display: none; }
 .hm-row, .pt { cursor: pointer; }
 .actions { display: flex; gap: 8px; flex-wrap: wrap; }
 

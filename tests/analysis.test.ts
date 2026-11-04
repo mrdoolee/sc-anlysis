@@ -56,6 +56,23 @@ describe('데이터셋', () => {
     expect(m.students.length).toBe(2);
   });
 
+  it('제외한 시점은 데이터셋에서 빠지고, 제외 목록에 남는다', () => {
+    const semId = ds.timepoints.find((t) => t.label === '2학년 1학기 성적')!.id;
+    const d = buildDataset(files, { aliases: {}, merges: {}, exclude: [semId] });
+    expect(d.timepoints.map((t) => t.label)).not.toContain('2학년 1학기 성적');
+    expect(d.timepoints.length).toBe(4);
+    expect(d.byTp.has(semId)).toBe(false);
+    expect(d.scores.some((s) => s.tpId === semId)).toBe(false);
+    expect(d.excluded).toEqual([{ id: semId, label: '2학년 1학기 성적', fileName: '1_total.xlsx' }]);
+  });
+
+  it('제외한 시점에만 있던 학생은 학생 목록에서 빠진다', () => {
+    const f = load([exam(1, ['국어'], [['가', 1, [10]]]), exam(2, ['국어'], [['가', 1, [20]], ['나', 2, [30]]])]);
+    const all = buildDataset(f, { aliases: {}, merges: {} });
+    const d = buildDataset(f, { aliases: {}, merges: {}, exclude: [all.timepoints[1].id] });
+    expect(d.students.map((s) => s.key)).toEqual(['가']);
+  });
+
   it('사용자 순서와 시점 정보 수정을 반영한다', () => {
     const ids = ds.timepoints.map((t) => t.id);
     const d = buildDataset(files, { aliases: {}, merges: {}, tpOrder: [...ids].reverse(), tpOverrides: { [ids[0]]: { label: '작년' } } });

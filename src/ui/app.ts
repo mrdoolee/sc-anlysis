@@ -19,6 +19,12 @@ interface State {
   merges: Record<string, string>;
   tpOrder: string[];
   tpOverrides: Record<string, TpOverride>;
+  /** 분석에서 뺀 시점 id(메모리에만 보관) */
+  excludedTps: string[];
+  /** 데이터 확인 화면에서 펼친 시점 */
+  openTps: string[];
+  /** 대시보드에서 접어 둔 차트 */
+  collapsedCharts: string[];
   gradeSigma: Record<string, number>;
   ds: Dataset | null;
   view: View;
@@ -40,7 +46,7 @@ interface State {
 }
 
 const initial = (): State => ({
-  files: [], loadErrors: [], settings: loadSettings(), merges: {}, tpOrder: [], tpOverrides: {}, gradeSigma: {}, ds: null,
+  files: [], loadErrors: [], settings: loadSettings(), merges: {}, tpOrder: [], tpOverrides: {}, excludedTps: [], openTps: [], collapsedCharts: [], gradeSigma: {}, ds: null,
   view: 'load', tab: 'student', preset: 'S3', grade: null, a: null, b: null, tpIds: [], unit: 'subject', metric: 'raw', focus: AVG,
   student: null, hidden: [], exportScope: 'student', exportSelected: [], anonymize: false, message: '',
 });
@@ -56,7 +62,7 @@ function rebuild(resetSelection = false): void {
     state.ds = null;
     return;
   }
-  const ds = buildDataset(state.files, { aliases: state.settings.aliases, merges: state.merges, tpOrder: state.tpOrder, tpOverrides: state.tpOverrides });
+  const ds = buildDataset(state.files, { aliases: state.settings.aliases, merges: state.merges, tpOrder: state.tpOrder, tpOverrides: state.tpOverrides, exclude: state.excludedTps });
   state.ds = ds;
   const ids = new Set(ds.timepoints.map((t) => t.id));
   if (state.grade === null || !gradesOf(ds).includes(state.grade)) state.grade = defaultGrade(ds);
@@ -83,7 +89,7 @@ function ctx(interactive: boolean, anonymize = false): ViewCtx | null {
   const m = matrix();
   if (!m || !state.ds) return null;
   const focus = m.items.some((i) => i.id === state.focus) ? state.focus : AVG;
-  return { ds: state.ds, m, settings: state.settings, metric: state.metric, focus, hidden: new Set(state.hidden), interactive, anonymize, nameOf: anonymizer(state.ds, anonymize) };
+  return { ds: state.ds, m, settings: state.settings, metric: state.metric, focus, hidden: new Set(state.hidden), interactive, anonymize, nameOf: anonymizer(state.ds, anonymize), collapsed: new Set(state.collapsedCharts) };
 }
 
 // ---------- 화면 ----------
@@ -160,18 +166,37 @@ ${files ? `<section class="card"><div class="card-head"><h2>불러온 파일 (${
 
 function viewCheck(): string {
   const ds = state.ds!;
-  const tpRows = ds.timepoints
+  // 시점 하나 = 한 줄 상자. 펼치면 이름·유형·학년·학기·회차를 고칠 수 있다.
+  const tpItems = ds.timepoints
     .map((t, i) => {
       const id = esc(t.id);
       const ov = state.tpOverrides[t.id] ?? {};
-      return `<tr>
-      <td><button type="button" class="small" data-action="tp-move" data-id="${id}" data-dir="-1"${i === 0 ? ' disabled' : ''} aria-label="위로">▲</button> <button type="button" class="small" data-action="tp-move" data-id="${id}" data-dir="1"${i === ds.timepoints.length - 1 ? ' disabled' : ''} aria-label="아래로">▼</button></td>
-      <td><input id="tpl-${i}" type="text" value="${esc(t.label)}" data-change="tp-label" data-id="${id}" aria-label="시점 이름"></td>
-      <td><select id="tpk-${i}" data-change="tp-kind" data-id="${id}" aria-label="유형">${(['exam', 'semester'] as TpKind[]).map((k) => opt(k, KIND_LABEL[k], t.kind === k)).join('')}</select></td>
-      ${(['grade', 'semester', 'round'] as const).map((f) => `<td><input id="tp${f}-${i}" class="num" type="number" min="1" max="20" value="${t[f] ?? ''}" data-change="tp-meta" data-field="${f}" data-id="${id}" aria-label="${f === 'grade' ? '학년' : f === 'semester' ? '학기' : '회차'}"></td>`).join('')}
-      <td class="left">${esc(t.subjects.join(', '))}</td>
-      <td class="left muted">${esc(t.fileName)}${ov.label || ov.kind || ov.grade !== undefined ? ' · 수정됨' : ''}</td>
-    </tr>`;
+      const open = state.openTps.includes(t.id);
+      const edited = ov.label || ov.kind || ov.grade !== undefined || ov.semester !== undefined || ov.round !== undefined;
+      const panel = open
+        ? `<div class="tp-edit" id="tpe-${i}">
+        <div class="field"><label for="tpl-${i}">이름</label><input id="tpl-${i}" type="text" value="${esc(t.label)}" data-change="tp-label" data-id="${id}"></div>
+        <div class="field"><label for="tpk-${i}">유형</label><select id="tpk-${i}" data-change="tp-kind" data-id="${id}">${(['exam', 'semester'] as TpKind[]).map((k) => opt(k, KIND_LABEL[k], t.kind === k)).join('')}</select></div>
+        ${(['grade', 'semester', 'round'] as const).map((f) => `<div class="field"><label for="tp${f}-${i}">${f === 'grade' ? '학년' : f === 'semester' ? '학기' : '회차'}</label><input id="tp${f}-${i}" class="num" type="number" min="1" max="20" value="${t[f] ?? ''}" data-change="tp-meta" data-field="${f}" data-id="${id}"></div>`).join('')}
+        <div class="field tp-subjects"><span class="group-label">과목 (${t.subjects.length})</span><span>${esc(t.subjects.join(', '))}</span></div>
+      </div>`
+        : '';
+      return `<li class="tp-item${open ? ' open' : ''}">
+      <div class="tp-line">
+        <span class="tp-no" aria-hidden="true">${i + 1}</span>
+        <button type="button" class="tp-toggle" id="tpo-${i}" data-action="tp-open" data-id="${id}" aria-expanded="${open}"${open ? ` aria-controls="tpe-${i}"` : ''}>
+          <strong>${esc(t.label)}</strong>
+          <span class="kind-badge ${t.kind}">${KIND_LABEL[t.kind]}</span>
+          <span class="tp-meta">${t.subjects.length}과목 · ${esc(t.fileName)}${edited ? ' · 수정됨' : ''}</span>
+          <span class="chev" aria-hidden="true">${open ? '접기 ▴' : '펼치기 ▾'}</span>
+        </button>
+        <span class="tp-actions">
+          <button type="button" class="small" data-action="tp-move" data-id="${id}" data-dir="-1"${i === 0 ? ' disabled' : ''} aria-label="${esc(t.label)} 위로">▲</button>
+          <button type="button" class="small" data-action="tp-move" data-id="${id}" data-dir="1"${i === ds.timepoints.length - 1 ? ' disabled' : ''} aria-label="${esc(t.label)} 아래로">▼</button>
+          <button type="button" class="small danger" id="tpx-${i}" data-action="tp-exclude" data-id="${id}" aria-label="${esc(t.label)} 제외">제외</button>
+        </span>
+      </div>${panel}
+    </li>`;
     })
     .join('');
 
@@ -208,9 +233,10 @@ function viewCheck(): string {
   ${ds.notices.length ? `<div class="note"><h3>알림</h3><ul>${ds.notices.map((n) => `<li>${esc(n.fileName)}: ${esc(n.message)}</li>`).join('')}</ul></div>` : '<div></div>'}
 </div>
 <section class="card">
-  <div class="card-head"><h2>시점 (${ds.timepoints.length}개)</h2><button type="button" class="small" data-action="tp-reset">순서·정보 초기화</button></div>
-  <p class="meta">순서·이름·유형을 바꿀 수 있습니다. 제목에서 학년·회차를 못 읽은 경우 직접 입력하세요.</p>
-  <div class="scroll"><table class="data form" id="tp-table"><thead><tr><th>순서</th><th>이름</th><th>유형</th><th>학년</th><th>학기</th><th>회차</th><th>과목</th><th>파일</th></tr></thead><tbody>${tpRows}</tbody></table></div>
+  <div class="card-head"><h2>시점 (${ds.timepoints.length}개)</h2><span class="actions"><button type="button" class="small" id="tp-open-all" data-action="tp-open-all">${state.openTps.length ? '모두 접기' : '모두 펼치기'}</button><button type="button" class="small" data-action="tp-reset">순서·정보 초기화</button></span></div>
+  <p class="meta">▲▼로 순서를 바꾸고, 시점을 펼쳐 이름·유형·학년·학기·회차를 고칩니다. 필요 없는 시점(예: 원하지 않는 학년의 학기 성적)은 '제외'로 분석에서 뺍니다. 파일은 그대로 두며 언제든 다시 포함할 수 있습니다.</p>
+  <ol class="tp-list" id="tp-list">${tpItems}</ol>
+  ${ds.excluded.length ? `<div class="excluded"><span class="group-label">제외한 시점 (${ds.excluded.length})</span><ul>${ds.excluded.map((x, i) => `<li><span>${esc(x.label)} <span class="muted">· ${esc(x.fileName)}</span></span> <button type="button" class="small" id="tpin-${i}" data-action="tp-include" data-id="${esc(x.id)}">다시 포함</button></li>`).join('')}</ul></div>` : ''}
 </section>
 <div class="grid-2">
   <section class="card">
@@ -272,7 +298,7 @@ function viewAnalyze(): string {
   else if (state.tab === 'alerts') body = alertsSection(c);
   else body = gapSection(c);
   return `${filters(c.m)}
-  <div class="segmented" role="tablist">${tabs.map(([t, l]) => `<button type="button" role="tab" id="tab-${t}" class="tab${state.tab === t ? ' active' : ''}" aria-selected="${state.tab === t}" data-action="tab" data-tab="${t}">${l}</button>`).join('')}</div>
+  <div class="dash-toolbar"><div class="segmented" role="tablist">${tabs.map(([t, l]) => `<button type="button" role="tab" id="tab-${t}" class="tab${state.tab === t ? ' active' : ''}" aria-selected="${state.tab === t}" data-action="tab" data-tab="${t}">${l}</button>`).join('')}</div><span class="actions"><button type="button" class="button-ghost" id="charts-collapse" data-action="charts-all" data-mode="collapse">차트 모두 접기</button><button type="button" class="button-ghost" id="charts-expand" data-action="charts-all" data-mode="expand">차트 모두 펼치기</button></span></div>
   <div class="report dash-body" id="result-body">${body}</div>`;
 }
 
@@ -474,7 +500,30 @@ function onAction(el: HTMLElement): void {
     case 'tp-reset':
       state.tpOrder = [];
       state.tpOverrides = {};
+      state.excludedTps = [];
       rebuild(true);
+      break;
+    case 'tp-exclude':
+      state.excludedTps = [...new Set([...state.excludedTps, d.id!])];
+      rebuild();
+      break;
+    case 'chart-toggle':
+      state.collapsedCharts = state.collapsedCharts.includes(d.key!) ? state.collapsedCharts.filter((k) => k !== d.key) : [...state.collapsedCharts, d.key!];
+      break;
+    case 'charts-all': {
+      const keys = [...document.querySelectorAll<HTMLElement>('#result-body [data-chart]')].map((el) => el.dataset.chart!);
+      state.collapsedCharts = d.mode === 'collapse' ? [...new Set([...state.collapsedCharts, ...keys])] : state.collapsedCharts.filter((k) => !keys.includes(k));
+      break;
+    }
+    case 'tp-open':
+      state.openTps = state.openTps.includes(d.id!) ? state.openTps.filter((x) => x !== d.id) : [...state.openTps, d.id!];
+      break;
+    case 'tp-open-all':
+      state.openTps = state.openTps.length ? [] : state.ds!.timepoints.map((t) => t.id);
+      break;
+    case 'tp-include':
+      state.excludedTps = state.excludedTps.filter((x) => x !== d.id);
+      rebuild();
       break;
     case 'apply-alias':
       state.settings.aliases = { ...state.settings.aliases, [d.from!]: d.to! };

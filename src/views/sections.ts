@@ -17,6 +17,8 @@ export interface ViewCtx {
   interactive: boolean;
   anonymize: boolean;
   nameOf: (key: string) => string;
+  /** 대시보드에서 접어 둔 차트 키 */
+  collapsed?: Set<string>;
 }
 
 export const tpLabelOf = (ds: Dataset) => (id: string) => ds.timepoints.find((t) => t.id === id)?.label ?? id;
@@ -41,6 +43,20 @@ const fullMarkOf = (m: Matrix, item: string) => Math.max(100, ...m.tpIds.map((tp
 
 function figure(svg: string, table = ''): string {
   return `<figure class="chart">${svg}${table ? `<details class="data-table"><summary>데이터 표 보기</summary>${table}</details>` : ''}</figure>`;
+}
+
+/**
+ * 대시보드(interactive)에서는 차트마다 한 줄 머리글(제목 + 접기/펼치기)이 있는 전체 폭 상자로,
+ * 리포트·인쇄에서는 기존 그림 카드로 그린다. key는 접힘 상태를 기억하는 고정 이름.
+ */
+function figureFor(ctx: ViewCtx) {
+  return (key: string, svg: string, tbl = ''): string => {
+    if (!ctx.interactive) return figure(svg, tbl);
+    const title = /aria-label="([^"]*)"/.exec(svg)?.[1] ?? '';
+    const open = !ctx.collapsed?.has(key);
+    const body = open ? `<div class="chart-body" id="cbb-${key}">${svg}${tbl ? `<details class="data-table"><summary>데이터 표 보기</summary>${tbl}</details>` : ''}</div>` : '';
+    return `<section class="chart-box${open ? '' : ' collapsed'}" data-chart="${key}"><div class="chart-head"><h3>${title}</h3><button type="button" class="small chart-toggle" id="cb-${key}" data-action="chart-toggle" data-key="${key}" aria-expanded="${open}"${open ? ` aria-controls="cbb-${key}"` : ''}>${open ? '접기 ▴' : '펼치기 ▾'}</button></div>${body}</section>`;
+  };
 }
 
 function table(head: string[], rows: string[][], cls = 'data'): string {
@@ -75,6 +91,7 @@ function kpi(label: string, value: string, sub = ''): string {
 }
 
 export function studentSections(ctx: ViewCtx, stu: string): string {
+  const fig = figureFor(ctx);
   const { m, ds, settings, metric } = ctx;
   const lab = tpLabelOf(ds);
   const xLabels = m.tpIds.map(lab);
@@ -99,7 +116,7 @@ export function studentSections(ctx: ViewCtx, stu: string): string {
   const all = series.flatMap((s) => s.values);
   const [lo, hi] = domain(metric, all, Math.max(...shown.map((i) => fullMarkOf(m, i.id)), 100));
   html += `<div class="charts">`;
-  html += figure(
+  html += fig('stu-lines', 
     lineChart({ title: `과목별 추이 (${METRIC_LABEL[metric]})`, xLabels, series, yMin: lo, yMax: hi, band: metric === 'z' || metric === 'zg' ? [-1, 1] : metric === 't' ? [40, 60] : undefined, hlines: metric === 'z' || metric === 'zg' ? [{ y: 0, label: '학급 평균' }] : metric === 't' ? [{ y: 50, label: '학급 평균' }] : undefined }),
     table(['과목', ...xLabels.map(esc)], series.map((s) => [esc(s.name), ...s.values.map((x) => fmt(x, metric === 'raw' ? 1 : 2))])),
   );
@@ -109,7 +126,7 @@ export function studentSections(ctx: ViewCtx, stu: string): string {
   const fv = m.tpIds.map((tp) => m.cell(focus.id, tp, stu)?.raw ?? null);
   const cm = m.tpIds.map((tp) => m.stat(focus.id, tp)?.mean ?? null);
   const gm = m.tpIds.map((tp) => m.stat(focus.id, tp)?.gradeMean ?? null);
-  html += figure(
+  html += fig('stu-focus', 
     lineChart({
       title: `${focus.label}: 학생 vs 학급·학년 평균 (원점수)`, xLabels, yMin: 0, yMax: fullMarkOf(m, focus.id),
       series: [{ name: '학생', values: fv, style: 0 }, { name: '학급 평균', values: cm, reference: true }, { name: '학년 평균', values: gm, style: 5 }],
@@ -121,14 +138,14 @@ export function studentSections(ctx: ViewCtx, stu: string): string {
   if (metric === 'raw' || metric === 't') {
     const zs = shown.map((i) => ({ name: i.label, values: m.tpIds.map((tp) => m.cell(i.id, tp, stu)?.z ?? null), style: items.indexOf(i) }));
     const [zl, zh] = domain('z', zs.flatMap((s) => s.values));
-    html += figure(lineChart({ title: '표준화 추이 (z점수, 학급 기준)', xLabels, series: zs, yMin: zl, yMax: zh, band: [-1, 1], hlines: [{ y: 0, label: '학급 평균' }] }));
+    html += fig('stu-z', lineChart({ title: '표준화 추이 (z점수, 학급 기준)', xLabels, series: zs, yMin: zl, yMax: zh, band: [-1, 1], hlines: [{ y: 0, label: '학급 평균' }] }));
   }
 
   // 4) 레이더(공통 과목, 최대 3시점)
   const radarTps = m.tpIds.length <= 3 ? m.tpIds : [m.tpIds[0], m.tpIds[Math.floor(m.tpIds.length / 2)], m.tpIds.at(-1)!];
   const axes = items.filter((i) => radarTps.every((tp) => m.stat(i.id, tp)?.n));
   const rm: Metric = metric === 'raw' ? 'raw' : 't';
-  html += figure(
+  html += fig('stu-radar', 
     radarChart({
       title: `과목 프로파일 (${rm === 'raw' ? '원점수' : 'T점수'})`, axes: axes.map((a) => a.label), min: rm === 'raw' ? 0 : 20, max: rm === 'raw' ? 100 : 80,
       series: radarTps.map((tp, k) => ({ name: lab(tp), values: axes.map((a) => metricValue(m.cell(a.id, tp, stu), rm)), style: k })),
@@ -144,15 +161,15 @@ export function studentSections(ctx: ViewCtx, stu: string): string {
       const y = metricValue(m.cell(i.id, b, stu), metric);
       return x === null || y === null ? null : y - x;
     });
-    html += figure(barChart({ title: `전회 대비 변화: ${lab(a)} → ${lab(b)} (${METRIC_LABEL[metric]})`, labels: items.map((i) => i.label), values: dv, signed: true, digits: metric === 'raw' || metric === 't' ? 1 : 2 }));
+    html += fig('stu-delta', barChart({ title: `전회 대비 변화: ${lab(a)} → ${lab(b)} (${METRIC_LABEL[metric]})`, labels: items.map((i) => i.label), values: dv, signed: true, digits: metric === 'raw' || metric === 't' ? 1 : 2 }));
   }
 
   // 6) 과목 × 시점 z 프로파일
-  html += figure(heatmap({ title: '과목별 학급 내 위치 (z)', rows: items.map((i) => i.label), cols: xLabels, values: items.map((i) => m.tpIds.map((tp) => m.cell(i.id, tp, stu)?.z ?? null)), digits: 2 }));
+  html += fig('stu-heat', heatmap({ title: '과목별 학급 내 위치 (z)', rows: items.map((i) => i.label), cols: xLabels, values: items.map((i) => m.tpIds.map((tp) => m.cell(i.id, tp, stu)?.z ?? null)), digits: 2 }));
 
   // 7) 석차·백분위 추이
   const prs = m.tpIds.map((tp) => m.cell(AVG, tp, stu)?.pr ?? null);
-  html += figure(
+  html += fig('stu-pr', 
     lineChart({ title: '공통 과목 평균 학급 백분위 추이 (높을수록 상위)', xLabels, series: [{ name: '백분위', values: prs, style: 2 }], yMin: 0, yMax: 100 }),
     table(['구분', ...xLabels.map(esc)], [['석차', ...m.tpIds.map((tp) => { const c = m.cell(AVG, tp, stu); return c?.rank ? `${c.rank}/${m.stat(AVG, tp)?.n}` : '–'; })], ['백분위', ...prs.map((x) => fmt(x, 0))]]),
   );
@@ -175,6 +192,7 @@ export function studentSections(ctx: ViewCtx, stu: string): string {
 }
 
 export function classSections(ctx: ViewCtx): string {
+  const fig = figureFor(ctx);
   const { m, ds, settings, metric } = ctx;
   const lab = tpLabelOf(ds);
   const xLabels = m.tpIds.map(lab);
@@ -183,10 +201,10 @@ export function classSections(ctx: ViewCtx): string {
   let html = `<header><h2>${esc(ds.classLabel ?? '학급')} 학급 개관</h2>${selectionSummary(ctx)}<p class="meta">중심 항목: ${esc(focus.label)} · 학생 ${m.students.length}명 · 공통 과목: ${esc(m.common.join(', ') || '없음')}</p></header>`;
   html += `<div class="kpis">${kpi('학생 수', String(m.students.length))}${kpi('상승', `${counts.상승}명`)}${kpi('유지', `${counts.유지}명`)}${kpi('하락', `${counts.하락}명`, counts['판단 불가'] ? `판단 불가 ${counts['판단 불가']}명` : '')}</div>`;
   html += `<div class="charts">`;
-  html += figure(barChart({ title: `${focus.label} 추세 분포 (학생 수)`, labels: ['상승', '유지', '하락', '판단 불가'], values: [counts.상승, counts.유지, counts.하락, counts['판단 불가']], digits: 0 }));
+  html += fig('cls-trend', barChart({ title: `${focus.label} 추세 분포 (학생 수)`, labels: ['상승', '유지', '하락', '판단 불가'], values: [counts.상승, counts.유지, counts.하락, counts['판단 불가']], digits: 0 }));
 
   const means = m.items.map((i, k) => ({ name: i.label, values: m.tpIds.map((tp) => m.stat(i.id, tp)?.mean ?? null), style: i.id === AVG ? 6 : k }));
-  html += figure(
+  html += fig('cls-means', 
     lineChart({ title: '학급 평균 추이 (원점수)', xLabels, series: [...means, { name: `${focus.label} 학년 평균`, values: m.tpIds.map((tp) => m.stat(focus.id, tp)?.gradeMean ?? null), reference: true }], yMin: 0, yMax: Math.max(...m.items.map((i) => fullMarkOf(m, i.id))) }),
     table(['항목', ...xLabels.map(esc)], m.items.map((i) => [esc(i.label), ...m.tpIds.map((tp) => { const s = m.stat(i.id, tp); return s?.n ? `${fmt(s.mean)} (σ ${fmt(s.sd)}, n=${s.n}, 학년 ${fmt(s.gradeMean)})` : '–'; })])),
   );
@@ -195,18 +213,18 @@ export function classSections(ctx: ViewCtx): string {
     const s = m.stat(focus.id, tp);
     return { min: s?.min ?? null, q1: s?.q1 ?? null, median: s?.median ?? null, q3: s?.q3 ?? null, max: s?.max ?? null, mean: s?.mean ?? null, n: s?.n ?? 0 };
   });
-  html += figure(boxPlot({ title: `${focus.label} 분포 (원점수)`, labels: xLabels, boxes, reference: m.tpIds.map((tp) => m.stat(focus.id, tp)?.gradeMean ?? null), yMin: 0, yMax: fullMarkOf(m, focus.id) }));
+  html += fig('cls-box', boxPlot({ title: `${focus.label} 분포 (원점수)`, labels: xLabels, boxes, reference: m.tpIds.map((tp) => m.stat(focus.id, tp)?.gradeMean ?? null), yMin: 0, yMax: fullMarkOf(m, focus.id) }));
 
   const lastTp = m.tpIds.at(-1);
   if (lastTp) {
     const fm = fullMarkOf(m, focus.id);
     const vals = m.students.map((s) => m.cell(focus.id, lastTp, s)?.raw ?? null).filter((x): x is number => x !== null);
     const bins = Array.from({ length: 10 }, (_, i) => vals.filter((v) => (i === 9 ? v >= (fm * i) / 10 : v >= (fm * i) / 10 && v < (fm * (i + 1)) / 10)).length);
-    html += figure(barChart({ title: `${focus.label} 점수 분포: ${lab(lastTp)} (학생 수)`, labels: bins.map((_, i) => `${(fm * i) / 10}~`), values: bins, digits: 0 }));
+    html += fig('cls-hist', barChart({ title: `${focus.label} 점수 분포: ${lab(lastTp)} (학생 수)`, labels: bins.map((_, i) => `${(fm * i) / 10}~`), values: bins, digits: 0 }));
   }
 
   const keys = m.students.filter((s) => m.tpIds.some((tp) => m.cell(focus.id, tp, s)));
-  html += figure(heatmap({ title: `학생 × 시점 학급 내 위치 (z, ${focus.label})`, rows: keys.map(ctx.nameOf), rowKeys: ctx.interactive ? keys : undefined, cols: xLabels, values: keys.map((s) => m.tpIds.map((tp) => m.cell(focus.id, tp, s)?.z ?? null)), digits: 2 }));
+  html += fig('cls-heat', heatmap({ title: `학생 × 시점 학급 내 위치 (z, ${focus.label})`, rows: keys.map(ctx.nameOf), rowKeys: ctx.interactive ? keys : undefined, cols: xLabels, values: keys.map((s) => m.tpIds.map((tp) => m.cell(focus.id, tp, s)?.z ?? null)), digits: 2 }));
 
   if (m.tpIds.length >= 2) {
     const a = m.tpIds[0];
@@ -216,7 +234,7 @@ export function classSections(ctx: ViewCtx): string {
       .map((s) => ({ x: metricValue(m.cell(focus.id, a, s), sm), y: metricValue(m.cell(focus.id, b, s), sm), label: ctx.nameOf(s), key: ctx.interactive ? s : undefined }))
       .filter((p): p is { x: number; y: number; label: string; key: string | undefined } => p.x !== null && p.y !== null);
     const [lo, hi] = domain(sm, pts.flatMap((p) => [p.x, p.y]), fullMarkOf(m, focus.id));
-    html += figure(scatterChart({ title: `${focus.label}: ${lab(a)} vs ${lab(b)} (${METRIC_LABEL[sm]})`, points: pts, xLabel: lab(a), yLabel: lab(b), min: lo, max: hi }));
+    html += fig('cls-scatter', scatterChart({ title: `${focus.label}: ${lab(a)} vs ${lab(b)} (${METRIC_LABEL[sm]})`, points: pts, xLabel: lab(a), yLabel: lab(b), min: lo, max: hi }));
   }
   html += `</div>`;
 
@@ -247,10 +265,11 @@ export function alertsSection(ctx: ViewCtx): string {
 }
 
 export function gapSection(ctx: ViewCtx, stu?: string): string {
+  const fig = figureFor(ctx);
   const gaps = semesterGap(ctx.ds);
   let html = `<section class="gap"><h3>학기 성적 ↔ 고사 격차${stu ? '' : ' (학급)'}</h3><p class="meta">격차 = 학기 성적 − 같은 학기 고사 평균(만점 대비 %). 학기 성적에는 수행평가 등이 포함될 수 있어 참고 지표입니다.</p>`;
   if (!gaps.length) return `${html}<p>같은 학년·학기의 학기 성적과 고사가 함께 있을 때 표시합니다.</p></section>`;
-  for (const g of gaps) {
+  for (const [gi, g] of gaps.entries()) {
     const title = `${g.semTp.label} vs ${g.examTps.map((e) => e.label).join('·')}`;
     if (stu) {
       const rows = g.rows.map((r) => {
@@ -259,7 +278,7 @@ export function gapSection(ctx: ViewCtx, stu?: string): string {
       });
       html += `<h4>${esc(title)}</h4>${table(['과목', '학기 성적', '고사 평균', '격차', '학급 평균 격차'], rows)}`;
     } else {
-      html += figure(barChart({ title: `학급 평균 격차: ${title}`, labels: g.rows.map((r) => r.subject), values: g.rows.map((r) => r.classGap), signed: true }));
+      html += fig(`gap-${gi}`, barChart({ title: `학급 평균 격차: ${title}`, labels: g.rows.map((r) => r.subject), values: g.rows.map((r) => r.classGap), signed: true }));
       html += table(['과목', 'n', '학급 평균 격차'], g.rows.map((r) => [esc(r.subject), String(r.n), fmtSigned(r.classGap)]));
     }
   }
