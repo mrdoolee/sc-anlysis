@@ -34,7 +34,7 @@ check('dist는 index.html 단일 파일', distFiles.length === 1, distFiles.map(
 const csp = /<meta http-equiv="Content-Security-Policy" content="([^"]+)"/.exec(dist)?.[1] ?? '';
 for (const d of ["default-src 'none'", "connect-src 'none'", "form-action 'none'", "object-src 'none'", "base-uri 'none'"]) check(`CSP: ${d}`, csp.includes(d));
 check('CSP: script-src는 해시만(unsafe-inline 없음)', /script-src( 'sha256-[^']+')+;/.test(csp) && !csp.includes('unsafe'));
-check('외부 <script src>/<link href> 없음', !/<script[^>]+src=|<link[^>]+href=/i.test(dist));
+check('외부 <script src>/<link href> 없음(내장 data:만 허용)', !/<script[^>]+src=|<link[^>]+href="(?!data:)/i.test(dist));
 
 const NS = new Set(['http://www.w3.org/2000/svg', 'http://www.w3.org/1999/xlink', 'http://www.w3.org/1999/xhtml', 'http://www.w3.org/XML/1998/namespace', 'http://www.w3.org/2000/xmlns/']);
 // 제작자 안내 모달의 링크: 사용자가 직접 눌러 새 탭으로 여는 주소일 뿐, 앱이 요청하거나 데이터를 붙여 보내지 않는다.

@@ -23,6 +23,13 @@ html = html.replace(/<link\b[^>]*rel="stylesheet"[^>]*href="\.?\/?([^"]+)"[^>]*>
   styleHashes.push(sha(css));
   return `<style>${css}</style>`;
 });
+// 파비콘 등 남은 파일 참조(./assets/…)는 data: URI로 넣어 단일 파일을 유지한다.
+const MIME = { png: 'image/png', svg: 'image/svg+xml', ico: 'image/x-icon', webp: 'image/webp' };
+html = html.replace(/(href|src)="\.?\/?(assets\/[^"]+\.(png|svg|ico|webp))"/g, (_, attr, path, ext) => {
+  const data = readFileSync(join(dist, path)).toString('base64');
+  return `${attr}="data:${MIME[ext]};base64,${data}"`;
+});
+if (/(href|src)="\.?\/?assets\//.test(html)) throw new Error('인라인하지 못한 파일 참조가 남아 있습니다.');
 if (!scriptHashes.length) throw new Error('인라인할 스크립트를 찾지 못했습니다.');
 
 const csp = [
