@@ -435,7 +435,7 @@ function viewSettings(): string {
   const s = state.settings;
   const num = (id: string, field: keyof Settings, label: string, step = '0.1') =>
     `<label for="${id}">${label}</label><input id="${id}" class="num" type="number" step="${step}" value="${s[field] as number}" data-change="setting" data-field="${field}">`;
-  return `<div class="grid-2">
+  return `<div class="stack">
   <section class="card">
     <h2>기준값</h2>
     <p class="meta">설정은 이 브라우저에 저장됩니다. 성적·이름은 저장하지 않습니다.</p>
