@@ -1,6 +1,6 @@
 // 분석 코어: 시나리오 프리셋, 지표 행렬(원점수·z·T·석차·백분위), 추세, 주의 학생, 학기종합↔고사 격차.
 import type { Dataset, Timepoint } from './dataset.ts';
-import type { Settings } from './settings.ts';
+import { subjectKey, type Settings } from './settings.ts';
 import { achievementOf, competitionRanks, mean, percentileRanks, popSd, present, quantile, slope, tScore } from './stats.ts';
 
 export type Unit = 'subject' | 'group';
@@ -139,19 +139,27 @@ export function buildMatrix(ds: Dataset, tpIds: string[], unit: Unit, settings: 
   } else {
     const grouped = new Set<string>();
     for (const g of settings.groups) {
-      const members = order.filter((s) => g.subjects.includes(s));
+      const keys = new Set(g.subjects.map(subjectKey));
+      const inGroup = (s: string) => keys.has(subjectKey(s));
+      const members = order.filter(inGroup);
       if (!members.length) continue;
       members.forEach((m) => grouped.add(m));
-      defs.push({ item: { id: `g:${g.name}`, label: g.name }, membersAt: (tp) => subjectsAt(tp).filter((s) => g.subjects.includes(s)), derived: true });
+      defs.push({ item: { id: `g:${g.name}`, label: g.name }, membersAt: (tp) => subjectsAt(tp).filter(inGroup), derived: true });
     }
     for (const s of order) if (!grouped.has(s)) defs.push({ item: { id: s, label: s }, membersAt: (tp) => (subjectsAt(tp).includes(s) ? [s] : []), derived: false });
   }
   defs.push({ item: { id: AVG, label: '공통 과목 평균' }, membersAt: () => common, derived: true });
 
-  const cells = new Map<string, CellV>();
-  const stats = new Map<string, ItemStat>();
-  for (const d of defs) {
-    for (const tp of ids) {
+  // 항목·시점·학생 위치로 찾는 평평한 배열(문자열 키를 만들지 않아 빠르다)
+  const T = ids.length;
+  const S = students.length;
+  const itemIdx = new Map(defs.map((d, i) => [d.item.id, i]));
+  const tpIdx = new Map(ids.map((id, i) => [id, i]));
+  const stuIdx = new Map(students.map((s, i) => [s, i]));
+  const cells: (CellV | undefined)[] = new Array(defs.length * T * S);
+  const stats: (ItemStat | undefined)[] = new Array(defs.length * T);
+  for (const [di, d] of defs.entries()) {
+    for (const [ti, tp] of ids.entries()) {
       const members = d.membersAt(tp);
       const table = ds.byTp.get(tp)!;
       const values = students.map((stu): { v: number | null; max: number; achFile: string | null } => {
@@ -179,10 +187,10 @@ export function buildMatrix(ds: Dataset, tpIds: string[], unit: Unit, settings: 
       const gradeN = members.length === 1 ? (table.get(members[0])?.values().next().value?.gradeN ?? null) : null;
       const zReason = !xs.length ? '점수 없음' : xs.length < settings.minN ? `인원 부족(n=${xs.length} < ${settings.minN})` : sd === 0 ? '표준편차 0' : null;
       const fullMark = values.find((v) => v.v !== null)?.max ?? 100;
-      stats.set(`${d.item.id}|${tp}`, {
+      stats[di * T + ti] = {
         n: xs.length, mean: mu, sd, min: sorted[0] ?? null, q1: quantile(sorted, 0.25), median: quantile(sorted, 0.5), q3: quantile(sorted, 0.75), max: sorted.at(-1) ?? null,
         fullMark, gradeMean, gradeN, zReason, members,
-      });
+      };
       const ranks = competitionRanks(values.map((v) => v.v));
       const prs = percentileRanks(values.map((v) => v.v));
       const sigmaG = gradeSigma[`${tp}|${d.item.id}`];
@@ -190,20 +198,29 @@ export function buildMatrix(ds: Dataset, tpIds: string[], unit: Unit, settings: 
         const v = values[i].v;
         if (v === null) return;
         const z = zReason === null && mu !== null && sd ? (v - mu) / sd : null;
-        cells.set(`${d.item.id}|${tp}|${stu}`, {
+        cells[(di * T + ti) * S + i] = {
           raw: v, max: values[i].max, z, t: z === null ? null : tScore(z),
           zg: sigmaG && sigmaG > 0 && gradeMean !== null ? (v - gradeMean) / sigmaG : null,
           dev: gradeMean === null ? null : v - gradeMean,
           rank: ranks[i], pr: prs[i], achFile: values[i].achFile, achCalc: achievementOf(v, values[i].max, settings.cutoffs),
-        });
+        };
       });
     }
   }
   return {
     tpIds: ids, tps, items: defs.map((d) => d.item), unit, common, students,
     mixedKinds: new Set(tps.map((t) => t.kind)).size > 1,
-    cell: (item, tp, stu) => cells.get(`${item}|${tp}|${stu}`),
-    stat: (item, tp) => stats.get(`${item}|${tp}`),
+    cell: (item, tp, stu) => {
+      const di = itemIdx.get(item);
+      const ti = tpIdx.get(tp);
+      const si = stuIdx.get(stu);
+      return di === undefined || ti === undefined || si === undefined ? undefined : cells[(di * T + ti) * S + si];
+    },
+    stat: (item, tp) => {
+      const di = itemIdx.get(item);
+      const ti = tpIdx.get(tp);
+      return di === undefined || ti === undefined ? undefined : stats[di * T + ti];
+    },
   };
 }
 

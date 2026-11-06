@@ -220,7 +220,7 @@ check('산점도 점 클릭 → 학생 상세', await page.locator('#tab-student
 await page.selectOption('#c-metric', 'z');
 check('z 기준 전환', (await page.locator('#result-body').textContent()).includes('z점수'));
 await page.click('label:has(#u-group)');
-check('교과군 단위 전환', (await page.locator('#c-focus option').allTextContents()).includes('사회'));
+check('교과군 단위 전환', (await page.locator('#c-focus option').allTextContents()).includes('사회·역사·도덕'));
 await page.click('#tab-alerts');
 check('학기 성적↔고사 탭 없음', (await page.locator('#tab-gap').count()) === 0 && !(await page.locator('.segmented').textContent()).includes('고사'));
 await page.click('label:has(#u-subject)');

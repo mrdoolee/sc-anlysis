@@ -15,21 +15,29 @@ export function popSd(xs: number[]): number | null {
 
 export const tScore = (z: number): number => 50 + 10 * z;
 
+/** 값마다 '더 작은 값의 수'와 '같은 값의 수'(정렬 한 번, O(n log n)) */
+function belowEqual(values: (number | null)[]): { n: number; below: Map<number, number>; equal: Map<number, number> } {
+  const xs = present(values).sort((a, b) => a - b);
+  const below = new Map<number, number>();
+  const equal = new Map<number, number>();
+  for (let i = 0; i < xs.length; i++) {
+    if (!below.has(xs[i])) below.set(xs[i], i);
+    equal.set(xs[i], (equal.get(xs[i]) ?? 0) + 1);
+  }
+  return { n: xs.length, below, equal };
+}
+
 /** 경쟁 순위: 높은 점수가 1위, 동점은 같은 순위, 다음 순위는 건너뛴다. */
 export function competitionRanks(values: (number | null)[]): (number | null)[] {
-  const xs = present(values);
-  return values.map((v) => (v === null ? null : xs.filter((x) => x > v).length + 1));
+  const { n, below, equal } = belowEqual(values);
+  // 나보다 큰 값의 수 = n − (작은 수 + 같은 수)
+  return values.map((v) => (v === null ? null : n - (below.get(v)! + equal.get(v)!) + 1));
 }
 
 /** 백분위 PR = (낮은 수 + 0.5 × 동점 수(본인 포함)) / n × 100 */
 export function percentileRanks(values: (number | null)[]): (number | null)[] {
-  const xs = present(values);
-  return values.map((v) => {
-    if (v === null) return null;
-    const below = xs.filter((x) => x < v).length;
-    const equal = xs.filter((x) => x === v).length;
-    return ((below + 0.5 * equal) / xs.length) * 100;
-  });
+  const { n, below, equal } = belowEqual(values);
+  return values.map((v) => (v === null ? null : ((below.get(v)! + 0.5 * equal.get(v)!) / n) * 100));
 }
 
 /** 시점 순번(0,1,2…)에 대한 최소제곱 기울기. 값이 3개 미만이면 null. */

@@ -450,9 +450,10 @@ function viewSettings(): string {
   </section>
   <section class="card">
     <h2>교과군 (과목 묶음)</h2>
-    <p class="meta">한 줄에 하나씩 '교과군: 과목, 과목' 형식으로 적습니다.</p>
-    <textarea id="st-groups" rows="8" data-change="groups" aria-label="교과군">${esc(s.groups.map((g) => `${g.name}: ${g.subjects.join(', ')}`).join('\n'))}</textarea>
-    <p><button type="button" class="button-ghost" data-action="reset-settings">기본값으로 되돌리기</button></p>
+    <p class="meta">대시보드 ② 분석 과목에서 단위를 '교과군'으로 고르면 이 묶음으로 평균을 냅니다. 기본값은 2022 개정 교육과정 중학교 교과(군) 편제를 따릅니다(나이스 교과 구분과 같음). 한 줄에 하나씩 '교과군: 과목, 과목' 형식으로 적고, 과목명의 띄어쓰기·가운뎃점은 구분하지 않습니다(예: 기술가정 = 기술·가정).</p>
+    <table class="data narrow group-table"><thead><tr><th>교과군</th><th>과목</th></tr></thead><tbody>${s.groups.map((g) => `<tr><th scope="row">${esc(g.name)}</th><td class="left">${esc(g.subjects.join(', '))}</td></tr>`).join('')}</tbody></table>
+    <textarea id="st-groups" rows="9" data-change="groups" aria-label="교과군">${esc(s.groups.map((g) => `${g.name}: ${g.subjects.join(', ')}`).join('\n'))}</textarea>
+    <p class="actions"><button type="button" class="button-ghost" id="reset-groups" data-action="reset-groups">교과군만 기본값으로</button><button type="button" class="button-ghost" data-action="reset-settings">모든 설정 기본값으로</button></p>
   </section>
 </div>`;
 }
@@ -608,9 +609,11 @@ function onAction(el: HTMLElement): void {
       break;
     }
     case 'chart-zoom': {
+      // 화면의 차트를 그대로 복제하고, 데이터 표만 <template>에서 가져온다(HTML 중복 방지)
+      const svg = el.querySelector('.chart-svg')?.outerHTML ?? '';
       const src = document.getElementById(`zoom-src-${d.key}`) as HTMLTemplateElement | null;
       const title = el.querySelector('.pin-title')?.textContent ?? '';
-      if (src) openModal(esc(title), `<div class="zoom-body">${src.innerHTML}</div>`, { wide: true, id: 'zoom-modal' });
+      if (svg) openModal(esc(title), `<div class="zoom-body">${svg}${src?.innerHTML ?? ''}</div>`, { wide: true, id: 'zoom-modal' });
       return;
     }
     case 'class-sort': {
@@ -658,6 +661,11 @@ function onAction(el: HTMLElement): void {
     case 'print':
       printReport();
       return;
+    case 'reset-groups':
+      state.settings = { ...state.settings, groups: structuredClone(DEFAULT_SETTINGS.groups) };
+      saveSettings(state.settings);
+      rebuild();
+      break;
     case 'reset-settings':
       state.settings = structuredClone(DEFAULT_SETTINGS);
       saveSettings(state.settings);

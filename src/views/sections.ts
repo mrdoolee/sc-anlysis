@@ -76,7 +76,7 @@ function pinned(ctx: ViewCtx, list: [string, string, string][]): string {
   return `<div class="pinned">${list
     .map(([key, svg, tbl]) => {
       const title = /aria-label="([^"]*)"/.exec(svg)?.[1] ?? '';
-      return `<div class="pin-card"><button type="button" class="pin-zoom" id="zoom-${key}" data-action="chart-zoom" data-key="${key}" aria-label="${title} 크게 보기"><span class="pin-head"><span class="pin-title">${title}</span><span class="pin-hint">크게 보기 ⤢</span></span>${svg}</button><template id="zoom-src-${key}">${svg}${tbl ? `<details class="data-table" open><summary>데이터 표</summary>${tbl}</details>` : ''}</template></div>`;
+      return `<div class="pin-card"><button type="button" class="pin-zoom" id="zoom-${key}" data-action="chart-zoom" data-key="${key}" aria-label="${title} 크게 보기"><span class="pin-head"><span class="pin-title">${title}</span><span class="pin-hint">크게 보기 ⤢</span></span>${svg}</button><template id="zoom-src-${key}">${tbl ? `<details class="data-table" open><summary>데이터 표</summary>${tbl}</details>` : ''}</template></div>`;
     })
     .join('')}</div>`;
 }

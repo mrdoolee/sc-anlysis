@@ -5,3 +5,4 @@ sample_data/
 !tests/**/*.xlsx
 .e2e-out/
 coverage/
+.claude/
