@@ -1,6 +1,8 @@
 /* 리포트·차트 공통 스타일. 앱 화면, 인쇄, HTML 내보내기에서 함께 쓴다.
    Pretendard는 앱에만 내장된다(styles.css). 내보낸 HTML은 설치된 Pretendard 또는 시스템 한글 글꼴을 쓴다. */
 :root {
+  /* 밝은 화면 전용. 브라우저의 강제 다크 모드가 색을 바꿔 글자가 안 보이는 것을 막는다. */
+  color-scheme: only light;
   --font-heading: 'Pretendard', 'Pretendard Variable', 'Malgun Gothic', '맑은 고딕', 'Apple SD Gothic Neo', sans-serif;
   --font-body: 'Pretendard', 'Pretendard Variable', 'Malgun Gothic', '맑은 고딕', 'Apple SD Gothic Neo', sans-serif;
   --color-bg: #ffffff;

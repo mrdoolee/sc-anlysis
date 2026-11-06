@@ -40,6 +40,7 @@ export function exportHtmlDocument(title: string, body: string): string {
 <meta charset="utf-8">
 <meta http-equiv="Content-Security-Policy" content="default-src 'none'; style-src 'unsafe-inline'; img-src data:">
 <meta name="viewport" content="width=device-width, initial-scale=1">
+<meta name="color-scheme" content="only light">
 <meta name="robots" content="noindex">
 <title>${esc(title)}</title>
 <style>${reportCss}</style>
