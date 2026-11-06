@@ -5,6 +5,9 @@
 
 ## 실행
 
+### 웹에서 쓰기
+https://sc-analysis-trdoolee.vercel.app 에 접속합니다. 웹 주소로 여는 것은 앱(HTML 파일 하나)을 내려받는 것뿐이며, 불러온 성적 파일과 분석 결과는 이 경우에도 브라우저 밖으로 나가지 않습니다(CSP `connect-src 'none'`로 외부 전송 차단).
+
 ### 그냥 쓰기 (설치 불필요)
 1. `dist/index.html`을 더블클릭해 Edge 또는 Chrome으로 엽니다(인터넷 연결 불필요).
 2. 성적 xlsx 파일을 끌어다 놓습니다.
