@@ -370,3 +370,6 @@ table.sortable thead th { padding: 0; }
 table.data.group-table { width: 100%; }
 .group-table th[scope="row"] { width: 160px; white-space: nowrap; }
 #st-groups { display: block; width: 100%; max-width: none; margin-top: 12px; resize: vertical; }
+
+/* 설정: 기준값 안 두 번째 소제목(성취도 환산 기준) 위 여백 */
+.card .form-grid + h3 { margin-top: 20px; padding-top: 16px; border-top: 1px dashed var(--color-line); }
