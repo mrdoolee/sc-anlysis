@@ -373,3 +373,6 @@ table.data.group-table { width: 100%; }
 
 /* 설정: 기준값 안 두 번째 소제목(성취도 환산 기준) 위 여백 */
 .card .form-grid + h3 { margin-top: 20px; padding-top: 16px; border-top: 1px dashed var(--color-line); }
+
+/* 좌측 상단 앱 아이콘 */
+.logo-img { flex: none; display: block; width: 40px; height: 40px; }
