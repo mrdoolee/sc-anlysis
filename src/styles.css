@@ -365,3 +365,8 @@ table.sortable thead th { padding: 0; }
 .manual-btn { justify-content: center; }
 .manual ol { margin: 4px 0 8px; padding-left: 20px; }
 .manual p { margin: 0 0 4px; }
+
+/* 설정: 교과군 표와 입력 칸 폭을 카드 폭에 맞춤 */
+table.data.group-table { width: 100%; }
+.group-table th[scope="row"] { width: 160px; white-space: nowrap; }
+#st-groups { display: block; width: 100%; max-width: none; margin-top: 12px; resize: vertical; }
